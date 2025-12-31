@@ -297,6 +297,37 @@ class Ui_ReaderWindow(object):
         self.meaningScroll.setWidget(self.meaningContainer)
         self.word_main_layout.addWidget(self.meaningScroll, 1)
         
+        # 操作按钮（取消 / 添加到 Anki）
+        self.actionButtonsContainer = QWidget()
+        self.actionButtonsLayout = QHBoxLayout(self.actionButtonsContainer)
+        self.actionButtonsLayout.setContentsMargins(0, 0, 0, 0)
+        self.actionButtonsLayout.setSpacing(10)
+
+        self.cancelLookupButton = QPushButton("取消")
+        self.cancelLookupButton.setStyleSheet("""
+            QPushButton {
+                background-color: #F5F5F7;
+                color: #1D1D1F;
+                border: 1px solid #D2D2D7;
+                padding: 10px 16px;
+                border-radius: 6px;
+                font-family: "SF Pro Text", "-apple-system", "Microsoft YaHei";
+                font-size: 14px;
+                font-weight: 500;
+                margin: 4px 0;
+            }
+            QPushButton:hover {
+                background-color: #E5E5EA;
+            }
+            QPushButton:pressed {
+                background-color: #D2D2D7;
+            }
+            QPushButton:disabled {
+                background-color: #F5F5F7;
+                color: #8E8E93;
+            }
+        """)
+
         self.addToAnkiButton = QPushButton("添加到 Anki")
         self.addToAnkiButton.setStyleSheet("""
             QPushButton {
@@ -321,7 +352,10 @@ class Ui_ReaderWindow(object):
                 color: #FFFFFF;
             }
         """)
-        self.word_main_layout.addWidget(self.addToAnkiButton)
+
+        self.actionButtonsLayout.addWidget(self.cancelLookupButton)
+        self.actionButtonsLayout.addWidget(self.addToAnkiButton, 1)
+        self.word_main_layout.addWidget(self.actionButtonsContainer)
         
         # 添加到分割器
         self.splitter.addWidget(self.reader_container)

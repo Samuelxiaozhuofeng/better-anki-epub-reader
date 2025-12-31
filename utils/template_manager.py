@@ -14,7 +14,7 @@ class TemplateManager:
         self.default_templates = {
             "word_definition": {
                 "name": "基础释义模板",
-                "template": "请为单词 '{word}' 提供基本释义，不超过20个字。",
+                "template": "你是语言老师。请用中文、简洁输出，并结合上下文说明该词汇的语境义。",
                 "is_default": True
             }
         }

@@ -1,24 +1,19 @@
 {
-    "current_template_id": "word_definition_2",
+    "current_template_id": "word_definition_1",
     "word_definition": {
         "default": {
             "name": "基础释义模板",
-            "template": "请为单词 '{word}' 提供基本释义，不超过20个字。",
+            "template": "你是语言老师。请用中文、简洁输出，并结合上下文说明该词汇的语境义。",
             "is_default": true
         },
-        "word_definition_3": {
-            "name": "西语老师",
-            "template": "<Role> Spanish Teacher\n<Goal> Help users understand the meaning of {word} in context.\n<Instructions>\n1. Be brief and concise.\n2. USE HTML TO DESIGN THE LAYOUT FOR YOUR RESULTS\n3. Provide the explanation in simple Spanish that is easy to understand.\n4. Use emoji to aid understanding.",
-            "is_default": false
+        "example_json_guided": {
+            "name": "示例（JSON结构化，可选字段）",
+            "template": "你是语言老师，请用中文输出。\n\n请给出：\n1) 基本义（不超过3条，简明）\n2) 语境义（必须结合上下文，明确对应本次上下文）\n\n如启用了可选字段（pos/ipa/examples），请在有把握时一并给出。\n\n（注意：不要输出HTML/Markdown；系统会要求你最终只输出 JSON。）",
+            "is_default": true
         },
         "word_definition_1": {
-            "name": "英语老师",
-            "template": "<角色> 英语老师\n<目标> 帮助用户理解{word}在上下文中的含义。\n<说明\n1. 简明扼要。\n2. 使用HTML进行换行。\n3. 使用emoji帮助理解。",
-            "is_default": false
-        },
-        "word_definition_2": {
-            "name": "测试",
-            "template": "告诉我你接收到了多少个句子。",
+            "name": "新模板",
+            "template": "请使用西语来讲解。",
             "is_default": false
         }
     }

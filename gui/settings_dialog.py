@@ -48,10 +48,22 @@ class ContextSettingsDialog(QDialog):
         anki_context_layout.addWidget(self.anki_context_type_label)
         anki_context_layout.addWidget(self.anki_context_type_combo)
         self.anki_context_group.setLayout(anki_context_layout)
+
+        # 查词面板字段设置组
+        self.lookup_fields_group = QGroupBox("查词面板字段（可选）")
+        lookup_fields_layout = QVBoxLayout()
+        self.lookup_pos_checkbox = QCheckBox("词性（pos）")
+        self.lookup_ipa_checkbox = QCheckBox("音标（ipa）")
+        self.lookup_examples_checkbox = QCheckBox("例句（examples）")
+        lookup_fields_layout.addWidget(self.lookup_pos_checkbox)
+        lookup_fields_layout.addWidget(self.lookup_ipa_checkbox)
+        lookup_fields_layout.addWidget(self.lookup_examples_checkbox)
+        self.lookup_fields_group.setLayout(lookup_fields_layout)
         
         # 添加设置组到主布局
         self.main_layout.addWidget(self.ai_context_group)
         self.main_layout.addWidget(self.anki_context_group)
+        self.main_layout.addWidget(self.lookup_fields_group)
         self.main_layout.addStretch()
         
         # 添加按钮
@@ -86,6 +98,12 @@ class ContextSettingsDialog(QDialog):
                         if self.anki_context_type_combo.itemData(i) == anki_context_type:
                             self.anki_context_type_combo.setCurrentIndex(i)
                             break
+
+                    lookup_optional = config.get("lookup_optional_fields", {})
+                    if isinstance(lookup_optional, dict):
+                        self.lookup_pos_checkbox.setChecked(bool(lookup_optional.get("pos", False)))
+                        self.lookup_ipa_checkbox.setChecked(bool(lookup_optional.get("ipa", False)))
+                        self.lookup_examples_checkbox.setChecked(bool(lookup_optional.get("examples", False)))
         except Exception as e:
             QMessageBox.warning(self, "错误", f"加载配置失败：{str(e)}")
     
@@ -101,6 +119,11 @@ class ContextSettingsDialog(QDialog):
             # 更新上下文设置
             config["ai_context_type"] = self.ai_context_type_combo.currentData()
             config["anki_context_type"] = self.anki_context_type_combo.currentData()
+            config["lookup_optional_fields"] = {
+                "pos": self.lookup_pos_checkbox.isChecked(),
+                "ipa": self.lookup_ipa_checkbox.isChecked(),
+                "examples": self.lookup_examples_checkbox.isChecked(),
+            }
             
             # 保存配置
             with open(CONFIG_PATH, 'w', encoding='utf-8') as f:

@@ -21,6 +21,13 @@ from .epub_manager_dialog import EPUBManagerDialog
 from .reader_theme import get_reader_palette, word_label_font_size, word_label_font_size_compact
 from ..utils.async_utils import run_async
 from ..utils.paths import config_json_path, config_dir, reader_style_path
+from .lookup_thread import LookupThread
+from ..utils.lookup_json import (
+    build_lookup_prompt,
+    lookup_template_for_preferences,
+    render_lookup_result_html,
+    render_streaming_html,
+)
 
 class ReaderWindow(QMainWindow):
     def __init__(self, parent=None):
@@ -54,6 +61,8 @@ class ReaderWindow(QMainWindow):
         self.current_images = []
         self.current_image_index = 0
         self._image_thread = None
+        self._lookup_thread = None
+        self._lookup_request_id = 0
         
         # 初始化处理器
         self.anki_handler = AnkiHandler()
@@ -205,6 +214,8 @@ class ReaderWindow(QMainWindow):
         """设置信号连接"""
         # 文本选择变化时的处理
         self.textEdit.wordClicked.connect(self.on_word_clicked)
+        if hasattr(self.ui, "cancelLookupButton"):
+            self.ui.cancelLookupButton.clicked.connect(self.cancel_current_lookup)
         
         # 添加到Anki按钮事件
         self.ui.addToAnkiButton.clicked.connect(self.add_to_anki)
@@ -250,11 +261,17 @@ class ReaderWindow(QMainWindow):
             return
         
         try:
+            self._cancel_active_lookup()
+            self._lookup_request_id += 1
+            request_id = self._lookup_request_id
+
             # 更新UI
             self.current_meaning = None
             self.current_word = word
             self.current_context = context
             self.ui.addToAnkiButton.setEnabled(False)
+            if hasattr(self.ui, "cancelLookupButton"):
+                self.ui.cancelLookupButton.setEnabled(True)
 
             font_size = word_label_font_size(word)
 
@@ -278,41 +295,118 @@ class ReaderWindow(QMainWindow):
             self.ui.wordLabel.setText(word)
             
             # 显示加载提示
-            self.ui.meaningText.setHtml("正在加载释义...")
+            self.ui.meaningText.setHtml("<p style='color:#86868B;'>正在生成（流式）…</p>")
             self.ui.imageLabel.setText("正在加载图片...")
             
             # 同时触发 Bing 图片搜索
             self.open_bing_image()
             
-            # 异步获取释义
-            self.get_word_info(word, context)
+            # 异步获取释义（流式 + JSON）
+            self.start_lookup(request_id, word, context)
             
         except Exception as e:
             QMessageBox.warning(self, "错误", f"处理文本失败：{str(e)}")
-    
-    def get_word_info(self, word: str, context: str):
-        """获取单词信息"""
-        try:
-            # 获取当前使用的模板
-            template = self.template_manager.get_template("word_definition", self.current_template_id)
-            # 替换模板中的占位符
-            prompt = template.format(word=word)
-            if context:
-                prompt += f"\n\n上下文：\n{context}"
-            
-            # 获取释义
-            explanation_response = run_async(self.ai_client.explain(prompt))
-            if explanation_response.error:
-                raise Exception(explanation_response.error)
-            
-            # 更新UI
-            self.current_meaning = explanation_response.explanation
-            self.ui.meaningText.setHtml(self.current_meaning)
-            self.ui.addToAnkiButton.setEnabled(True)
-            
-        except Exception as e:
-            self.ui.meaningText.setHtml(f"获取释义失败：{str(e)}")
-            self.ui.addToAnkiButton.setEnabled(False)
+
+    def _load_lookup_optional_fields(self) -> dict:
+        path = config_json_path()
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+                raw = config.get("lookup_optional_fields", {})
+                if isinstance(raw, dict):
+                    return {str(k): bool(v) for k, v in raw.items()}
+            except Exception:
+                pass
+        return {"pos": False, "ipa": False, "examples": False}
+
+    def _load_lookup_style_and_language(self) -> tuple[str, str]:
+        path = config_json_path()
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+                style = str(config.get("lookup_style", "friendly"))
+                language = str(config.get("lookup_language", "zh"))
+                return style, language
+            except Exception:
+                pass
+        return "friendly", "zh"
+
+    def start_lookup(self, request_id: int, word: str, context: str) -> None:
+        style, language = self._load_lookup_style_and_language()
+        template_text = lookup_template_for_preferences(style=style, language=language)
+
+        enabled_optional_fields = self._load_lookup_optional_fields()
+        prompt = build_lookup_prompt(
+            template_text=template_text,
+            word=word,
+            context=context or "",
+            enabled_optional_fields=enabled_optional_fields,
+            max_basic_meanings=3,
+        )
+
+        self._lookup_thread = LookupThread(
+            request_id=request_id,
+            ai_client=self.ai_client,
+            prompt=prompt,
+            enabled_optional_fields=enabled_optional_fields,
+            max_basic_meanings=3,
+            repair_attempts=1,
+        )
+
+        self._lookup_thread.partial.connect(self._on_lookup_partial)
+        self._lookup_thread.finished.connect(self._on_lookup_finished)
+        self._lookup_thread.failed.connect(self._on_lookup_failed)
+        self._lookup_thread.cancelled.connect(self._on_lookup_cancelled)
+        self._lookup_thread.start()
+
+    def _cancel_active_lookup(self) -> None:
+        t = self._lookup_thread
+        if t and t.isRunning():
+            try:
+                t.cancel()
+            except Exception:
+                pass
+        self._lookup_thread = None
+        if hasattr(self.ui, "cancelLookupButton"):
+            self.ui.cancelLookupButton.setEnabled(False)
+
+    def cancel_current_lookup(self) -> None:
+        self._cancel_active_lookup()
+        self.ui.meaningText.setHtml("<p style='color:#86868B;'>已取消。</p>")
+        self.ui.addToAnkiButton.setEnabled(False)
+
+    def _on_lookup_partial(self, request_id: int, raw_text: str) -> None:
+        if request_id != self._lookup_request_id:
+            return
+        self.ui.meaningText.setHtml(render_streaming_html(raw_text))
+
+    def _on_lookup_finished(self, request_id: int, result_obj, raw_text: str) -> None:
+        if request_id != self._lookup_request_id:
+            return
+        enabled_optional_fields = self._load_lookup_optional_fields()
+        html = render_lookup_result_html(result_obj, enabled_optional_fields=enabled_optional_fields)
+        self.current_meaning = html
+        self.ui.meaningText.setHtml(html)
+        self.ui.addToAnkiButton.setEnabled(True)
+        if hasattr(self.ui, "cancelLookupButton"):
+            self.ui.cancelLookupButton.setEnabled(False)
+
+    def _on_lookup_failed(self, request_id: int, error_message: str) -> None:
+        if request_id != self._lookup_request_id:
+            return
+        self.ui.meaningText.setHtml(f"<p style='color:#B00020;'>获取释义失败：{error_message}</p>")
+        self.ui.addToAnkiButton.setEnabled(False)
+        if hasattr(self.ui, "cancelLookupButton"):
+            self.ui.cancelLookupButton.setEnabled(False)
+
+    def _on_lookup_cancelled(self, request_id: int) -> None:
+        if request_id != self._lookup_request_id:
+            return
+        self.ui.addToAnkiButton.setEnabled(False)
+        if hasattr(self.ui, "cancelLookupButton"):
+            self.ui.cancelLookupButton.setEnabled(False)
     
     def add_to_anki(self):
         """添加当前单词到Anki"""
@@ -403,6 +497,31 @@ class ReaderWindow(QMainWindow):
                 color: {text_color};
             }}
         """)
+
+        if hasattr(self.ui, "cancelLookupButton"):
+            self.ui.cancelLookupButton.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {control_bg};
+                    color: {text_color};
+                    border: 1px solid {border_color};
+                    padding: 10px 16px;
+                    border-radius: 6px;
+                    font-family: "SF Pro Text", "-apple-system", "Microsoft YaHei";
+                    font-size: 14px;
+                    font-weight: 500;
+                    margin: 4px 0;
+                }}
+                QPushButton:hover {{
+                    background-color: {control_hover_bg};
+                }}
+                QPushButton:pressed {{
+                    background-color: {border_color};
+                }}
+                QPushButton:disabled {{
+                    background-color: {panel_bg};
+                    color: #8E8E93;
+                }}
+            """)
 
         toolbar_style = f"""
             QToolBar {{
@@ -729,6 +848,8 @@ class ReaderWindow(QMainWindow):
         self.ui.wordLabel.setText("点击单词或选中文本查词")
         self.ui.meaningText.setHtml("<p style='color:#86868B;'>在左侧阅读区点击单词，或选中文本后右键选择“查词”。</p>")
         self.ui.addToAnkiButton.setEnabled(False)
+        if hasattr(self.ui, "cancelLookupButton"):
+            self.ui.cancelLookupButton.setEnabled(False)
         self.ui.imageLabel.setText("暂无图片")
         self.ui.imageCountLabel.setText("")
 
@@ -757,6 +878,7 @@ class ReaderWindow(QMainWindow):
         self._ui_settings.endGroup()
 
     def closeEvent(self, event):
+        self._cancel_active_lookup()
         self._save_ui_state()
         super().closeEvent(event)
 
