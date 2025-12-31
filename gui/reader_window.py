@@ -4,7 +4,7 @@ from anki.notes import Note
 import json
 import os
 import asyncio
-from PyQt6.QtCore import pyqtSignal, QTimer, Qt
+from PyQt6.QtCore import pyqtSignal, QTimer, Qt, QSettings
 from PyQt6.QtWidgets import QSplitter
 from ..utils.ai_factory import AIFactory
 from ..utils.ai_client import AIClient, AIResponse
@@ -173,6 +173,9 @@ class ReaderWindow(QMainWindow):
         self.current_chapter_index = 0
         self.current_word = None
         self.current_context = None
+        self.current_meaning = None
+
+        self._ui_settings = QSettings()
         
         # 初始化图片相关变量
         self.current_images = []
@@ -202,12 +205,17 @@ class ReaderWindow(QMainWindow):
         
         # 加载样式设置
         self.load_style_settings()
+
+        # 恢复窗口/分割器状态
+        self._restore_ui_state()
+
+        # 初始化词汇面板空状态
+        self._set_word_panel_empty_state()
         
         # 设置窗口标题
-        self.setWindowTitle("Anki Reader")
+        self.setWindowTitle("阅读器")
         
-        # 设置窗口大小
-        self.resize(1200, 800)
+        # 不强制设置窗口大小；由 UI 默认值或持久化状态决定
 
     def create_actions(self):
         """创建动作"""
@@ -218,15 +226,15 @@ class ReaderWindow(QMainWindow):
         self.ui.actionExit = QAction("退出(&X)", self)
         
         # 设置菜单动作
-        self.ui.actionAISettings = QAction("AI Service Settings(&A)", self)
-        self.ui.actionContextSettings = QAction("Context Settings(&C)", self)
-        self.ui.actionNoteSettings = QAction("Note Settings(&N)", self)
-        self.ui.actionTemplateSettings = QAction("Template Settings(&T)", self)
+        self.ui.actionAISettings = QAction("AI 服务设置(&A)", self)
+        self.ui.actionContextSettings = QAction("上下文设置(&C)", self)
+        self.ui.actionNoteSettings = QAction("笔记设置(&N)", self)
+        self.ui.actionTemplateSettings = QAction("模板设置(&T)", self)
     
     def setup_toolbar(self):
         """设置工具栏"""
         # 字体大小调节
-        font_size_label = QLabel("Font Size：")
+        font_size_label = QLabel("字体大小：")
         self.ui.toolbar.addWidget(font_size_label)
         
         self.font_size_spin = QSpinBox()
@@ -238,7 +246,7 @@ class ReaderWindow(QMainWindow):
         self.ui.toolbar.addSeparator()
         
         # 行间距调节
-        line_spacing_label = QLabel("Line Spacing")
+        line_spacing_label = QLabel("行间距：")
         self.ui.toolbar.addWidget(line_spacing_label)
         
         self.line_spacing_spin = QDoubleSpinBox()
@@ -251,7 +259,7 @@ class ReaderWindow(QMainWindow):
         self.ui.toolbar.addSeparator()
         
         # 段落间距调节
-        paragraph_spacing_label = QLabel("Paragraph Spacing")
+        paragraph_spacing_label = QLabel("段落间距：")
         self.ui.toolbar.addWidget(paragraph_spacing_label)
         
         self.paragraph_spacing_spin = QSpinBox()
@@ -263,54 +271,58 @@ class ReaderWindow(QMainWindow):
         self.ui.toolbar.addSeparator()
         
         # 文本对齐方式
-        align_label = QLabel("Text Alignment:")
+        align_label = QLabel("对齐方式：")
         self.ui.toolbar.addWidget(align_label)
         
         self.align_combo = QComboBox()
-        self.align_combo.addItems(["Left", "Justify"])
+        self.align_combo.addItem("左对齐", "left")
+        self.align_combo.addItem("两端对齐", "justify")
         self.align_combo.currentIndexChanged.connect(self.update_text_style)
         self.ui.toolbar.addWidget(self.align_combo)
         
         self.ui.toolbar.addSeparator()
         
         # 背景颜色
-        theme_label = QLabel("Theme:")
+        theme_label = QLabel("主题：")
         self.ui.toolbar.addWidget(theme_label)
         
         self.theme_combo = QComboBox()
-        self.theme_combo.addItems(["Default", "Eye Care", "Dark", "Brown"])
+        self.theme_combo.addItem("默认", "Default")
+        self.theme_combo.addItem("护眼", "Eye Care")
+        self.theme_combo.addItem("深色", "Dark")
+        self.theme_combo.addItem("纸张", "Brown")
         self.theme_combo.currentIndexChanged.connect(self.update_text_style)
         self.ui.toolbar.addWidget(self.theme_combo)
         
         self.ui.toolbar.addSeparator()
         
         # 添加标记位置按钮
-        self.mark_position_btn = QPushButton("Mark Position")
+        self.mark_position_btn = QPushButton("标记位置")
         self.mark_position_btn.clicked.connect(self.mark_current_position)
         self.ui.toolbar.addWidget(self.mark_position_btn)
         
         self.ui.toolbar.addSeparator()
         
         # EPUB管理按钮
-        self.manage_epub_btn = QPushButton("Book Manager")
+        self.manage_epub_btn = QPushButton("书籍管理")
         self.manage_epub_btn.clicked.connect(self.show_epub_manager)
         self.ui.toolbar.addWidget(self.manage_epub_btn)
         
         self.ui.toolbar.addSeparator()
         
         # 添加Bing Image按钮
-        self.bing_image_btn = QPushButton("Bing Image")
+        self.bing_image_btn = QPushButton("必应图片")
         self.bing_image_btn.clicked.connect(self.open_bing_image)
         self.ui.toolbar.addWidget(self.bing_image_btn)
         
         self.ui.toolbar.addSeparator()
         
         # 添加图片导航按钮
-        self.prev_image_btn = QPushButton("Prev Image")
+        self.prev_image_btn = QPushButton("上一张")
         self.prev_image_btn.clicked.connect(self.show_prev_image)
         self.ui.toolbar.addWidget(self.prev_image_btn)
         
-        self.next_image_btn = QPushButton("Next Image")
+        self.next_image_btn = QPushButton("下一张")
         self.next_image_btn.clicked.connect(self.show_next_image)
         self.ui.toolbar.addWidget(self.next_image_btn)
         
@@ -367,8 +379,10 @@ class ReaderWindow(QMainWindow):
         
         try:
             # 更新UI
+            self.current_meaning = None
             self.current_word = word
             self.current_context = context
+            self.ui.addToAnkiButton.setEnabled(False)
             
             # 根据单词长度设置字体大小
             word_length = len(word.split())
@@ -383,13 +397,16 @@ class ReaderWindow(QMainWindow):
                 
             # 获取当前主题颜色
             theme_colors = {
-                "Default": ("#FAF3E0", "#333333", "#F7F7F7"),  # 纯白背景，黑色文字，浅灰色选中
-                "Eye Care": ("#F6F5F1", "#2C3E50", "#E8E7E3"),  # 米白背景，深蓝灰文字，浅灰选中
-                "Dark": ("#1C1C1E", "#E5E5E7", "#2C2C2E"),  # iOS暗色模式
-                "Brown": ("#FAF6F1", "#3A3A3C", "#F0EBE6")   # 温暖纸张色
+                "Default": ("#FFFFFF", "#1D1D1F", "#CFE4FF"),
+                "Eye Care": ("#F6F5F1", "#1D1D1F", "#E8E7E3"),
+                "Dark": ("#1C1C1E", "#E5E5E7", "#3A3A3C"),
+                "Brown": ("#FAF6F1", "#2C2C2E", "#EFE6D8")
             }
-            current_theme = self.theme_combo.currentText()
+            current_theme = self._get_theme_id()
             bg_color, text_color, _ = theme_colors.get(current_theme, ("#FFFFFF", "#000000", "#F7F7F7"))
+            is_dark = current_theme == "Dark"
+            card_bg = "#3A3A3C" if is_dark else "#FFFFFF"
+            border_color = "#3A3A3C" if is_dark else "#E5E5EA"
             
             # 设置字体大小和主题颜色
             self.ui.wordLabel.setStyleSheet(f"""
@@ -398,15 +415,16 @@ class ReaderWindow(QMainWindow):
                     font-weight: 600;
                     color: {text_color};
                     padding: 16px;
-                    background-color: {bg_color};
-                    border-radius: 8px;
-                    border: 1px solid #D2D2D7;
+                    background-color: {card_bg};
+                    border-radius: 10px;
+                    border: 1px solid {border_color};
                 }}
             """)
             self.ui.wordLabel.setText(word)
             
             # 显示加载提示
             self.ui.meaningText.setHtml("正在加载释义...")
+            self.ui.imageLabel.setText("正在加载图片...")
             
             # 同时触发 Bing 图片搜索
             self.open_bing_image()
@@ -435,9 +453,11 @@ class ReaderWindow(QMainWindow):
             # 更新UI
             self.current_meaning = explanation_response.explanation
             self.ui.meaningText.setHtml(self.current_meaning)
+            self.ui.addToAnkiButton.setEnabled(True)
             
         except Exception as e:
             self.ui.meaningText.setHtml(f"获取释义失败：{str(e)}")
+            self.ui.addToAnkiButton.setEnabled(False)
     
     def add_to_anki(self):
         """添加当前单词到Anki"""
@@ -457,7 +477,7 @@ class ReaderWindow(QMainWindow):
     
     def save_file(self):
         """保存文件"""
-        file_name, _ = QFileDialog.getSaveFileName(self, "保存文件", "", "Text Files (*.txt);;All Files (*)")
+        file_name, _ = QFileDialog.getSaveFileName(self, "保存文件", "", "文本文件 (*.txt);;所有文件 (*)")
         if file_name:
             try:
                 with open(file_name, 'w', encoding='utf-8') as f:
@@ -480,14 +500,20 @@ class ReaderWindow(QMainWindow):
         """更新本样式"""
         # 获取主颜色
         theme_colors = {
-            "Default": ("#FAF3E0", "#333333", "#F7F7F7"),  # 纯白背景，黑色文字，浅灰色选中
-            "Eye Care": ("#F6F5F1", "#2C3E50", "#E8E7E3"),  # 米白背景，深蓝灰文字，浅灰选中
-            "Dark": ("#1C1C1E", "#E5E5E7", "#2C2C2E"),  # iOS暗色模式
-            "Brown": ("#FAF6F1", "#3A3A3C", "#F0EBE6")   # 温暖纸张色
+            "Default": ("#FFFFFF", "#1D1D1F", "#CFE4FF"),
+            "Eye Care": ("#F6F5F1", "#1D1D1F", "#E8E7E3"),
+            "Dark": ("#1C1C1E", "#E5E5E7", "#3A3A3C"),
+            "Brown": ("#FAF6F1", "#2C2C2E", "#EFE6D8")
         }
         
-        current_theme = self.theme_combo.currentText()
+        current_theme = self._get_theme_id()
         bg_color, text_color, selection_color = theme_colors.get(current_theme, ("#FFFFFF", "#000000", "#F7F7F7"))
+        is_dark = current_theme == "Dark"
+        panel_bg = "#2C2C2E" if is_dark else "#F5F5F7"
+        card_bg = "#3A3A3C" if is_dark else "#FFFFFF"
+        border_color = "#3A3A3C" if is_dark else "#E5E5EA"
+        control_bg = "#3A3A3C" if is_dark else "#FFFFFF"
+        control_hover_bg = "#48484A" if is_dark else "#F5F5F7"
         
         # 应用主题样式到整个阅读器界面
         self.reader_container.setStyleSheet(f"""
@@ -499,6 +525,96 @@ class ReaderWindow(QMainWindow):
                 background: {selection_color};
             }}
         """)
+
+        self.ui.word_panel.setStyleSheet(f"""
+            QWidget {{
+                background-color: {panel_bg};
+                border-left: 1px solid {border_color};
+            }}
+        """)
+
+        self.ui.meaningText.setStyleSheet(f"""
+            QTextEdit {{
+                background-color: {card_bg};
+                color: {text_color};
+                border-radius: 10px;
+                border: 1px solid {border_color};
+                padding: 16px;
+                font-size: 14px;
+                line-height: 1.5;
+                font-family: "SF Pro Text", "-apple-system", "PingFang SC", "Microsoft YaHei";
+            }}
+        """)
+
+        self.ui.imageLabel.setStyleSheet(f"""
+            QLabel {{
+                background-color: {card_bg};
+                border-radius: 10px;
+                border: 1px solid {border_color};
+                padding: 10px;
+                color: {text_color};
+            }}
+        """)
+
+        toolbar_style = f"""
+            QToolBar {{
+                background-color: {panel_bg};
+                border-bottom: 1px solid {border_color};
+                spacing: 8px;
+                padding: 8px;
+            }}
+            QToolBar QLabel {{
+                color: {text_color};
+            }}
+            QToolBar QPushButton {{
+                background-color: {control_bg};
+                color: {text_color};
+                border: 1px solid {border_color};
+                padding: 6px 12px;
+                border-radius: 6px;
+            }}
+            QToolBar QPushButton:hover {{
+                background-color: {control_hover_bg};
+            }}
+            QToolBar QComboBox {{
+                background-color: {control_bg};
+                color: {text_color};
+                border: 1px solid {border_color};
+                border-radius: 6px;
+                padding: 6px 12px;
+                min-width: 120px;
+            }}
+        """
+        self.ui.toolbar.setStyleSheet(toolbar_style)
+        self.ui.chapter_toolbar.setStyleSheet(toolbar_style)
+        self.ui.menubar.setStyleSheet(f"QMenuBar {{ background-color: {panel_bg}; color: {text_color}; border-bottom: 1px solid {border_color}; }}")
+
+        label_text = self.current_word or "点击单词或选中文本查词"
+        if self.current_word:
+            word_length = len(self.current_word.split())
+            if word_length <= 3:
+                label_font_size = 24
+            elif word_length <= 6:
+                label_font_size = 20
+            elif word_length <= 10:
+                label_font_size = 18
+            else:
+                label_font_size = 16
+        else:
+            label_font_size = 14
+
+        self.ui.wordLabel.setStyleSheet(f"""
+            QLabel {{
+                font-size: {label_font_size}px;
+                font-weight: 600;
+                color: {text_color};
+                padding: 16px;
+                background-color: {card_bg};
+                border-radius: 10px;
+                border: 1px solid {border_color};
+            }}
+        """)
+        self.ui.wordLabel.setText(label_text)
         
         # 设置文本编辑器的样式
         self.textEdit.setStyleSheet(f"""
@@ -524,8 +640,6 @@ class ReaderWindow(QMainWindow):
                     <html>
                     <head>
                         <style>
-                            @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;600&display=swap');
-                            
                             body {{
                                 font-family: "SF Pro Text", "PingFang SC", -apple-system, "Helvetica Neue", sans-serif;
                                 font-size: {self.font_size_spin.value()}px;
@@ -543,7 +657,6 @@ class ReaderWindow(QMainWindow):
                                 text-align: {self.get_current_text_align()};
                                 letter-spacing: 0.01em;
                                 word-spacing: 0.05em;
-                                text-wrap: balance;
                             }}
                             img {{
                                 max-width: 100%;
@@ -578,18 +691,18 @@ class ReaderWindow(QMainWindow):
                                 margin: 1.5em 0;
                                 padding: 0.8em 1.2em;
                                 border-left: 3px solid #007AFF;
-                                background-color: {selection_color};
+                                background-color: rgba(0, 122, 255, 0.08);
                                 border-radius: 4px;
                             }}
                             code {{
                                 font-family: "SF Mono", Menlo, Monaco, Consolas, monospace;
-                                background-color: {selection_color};
+                                background-color: rgba(0, 0, 0, 0.06);
                                 padding: 0.2em 0.4em;
                                 border-radius: 3px;
                                 font-size: 0.9em;
                             }}
                             pre {{
-                                background-color: {selection_color};
+                                background-color: rgba(0, 0, 0, 0.04);
                                 padding: 1em;
                                 border-radius: 4px;
                                 overflow-x: auto;
@@ -646,7 +759,7 @@ class ReaderWindow(QMainWindow):
     def mark_current_position(self):
         """标记当前阅读位置（带提示）"""
         if not self.current_book_id:
-            QMessageBox.warning(self, "Warning", "Please open a book first")
+            QMessageBox.warning(self, "提示", "请先打开一本书。")
             return
             
         # 获取当前垂直滚动条位置
@@ -658,9 +771,9 @@ class ReaderWindow(QMainWindow):
             self.current_chapter_index,
             position
         ):
-            QMessageBox.information(self, "Success", "Marked current position")
+            QMessageBox.information(self, "成功", "已标记当前阅读位置。")
         else:
-            QMessageBox.warning(self, "Failed", "Marked current position failed")
+            QMessageBox.warning(self, "失败", "标记位置失败。")
     
     def save_current_position(self):
         """静默保存当前阅读位置"""
@@ -684,8 +797,8 @@ class ReaderWindow(QMainWindow):
                 "font_size": self.font_size_spin.value(),
                 "line_spacing": self.line_spacing_spin.value(),
                 "paragraph_spacing": self.paragraph_spacing_spin.value(),
-                "text_align": self.align_combo.currentText(),
-                "theme": self.theme_combo.currentText()
+                "text_align": self.align_combo.currentData() or "left",
+                "theme": self._get_theme_id()
             }
             
             config_dir = os.path.join(mw.pm.addonFolder(), "anki_reader", "config")
@@ -716,14 +829,10 @@ class ReaderWindow(QMainWindow):
                     self.paragraph_spacing_spin.setValue(config.get("paragraph_spacing", 20))
                     
                     # 设置对齐方式
-                    align_index = self.align_combo.findText(config.get("text_align", "左对齐"))
-                    if align_index >= 0:
-                        self.align_combo.setCurrentIndex(align_index)
+                    self._set_align_from_config(config.get("text_align", "left"))
                     
                     # 设置主题
-                    theme_index = self.theme_combo.findText(config.get("theme", "默认"))
-                    if theme_index >= 0:
-                        self.theme_combo.setCurrentIndex(theme_index)
+                    self._set_theme_from_config(config.get("theme", "Default"))
                     
                     # 立即应用样式
                     self.update_text_style()
@@ -731,13 +840,94 @@ class ReaderWindow(QMainWindow):
         except Exception as e:
             print(f"���载样式设置失败: {str(e)}")
 
+    def _set_align_from_config(self, value: str) -> None:
+        value = (value or "").strip()
+        legacy_map = {
+            "Left": "left",
+            "Justify": "justify",
+            "左对齐": "left",
+            "两端对齐": "justify",
+        }
+        align = legacy_map.get(value, value)
+        for i in range(self.align_combo.count()):
+            if self.align_combo.itemData(i) == align:
+                self.align_combo.setCurrentIndex(i)
+                return
+        self.align_combo.setCurrentIndex(0)
+
+    def _set_theme_from_config(self, value: str) -> None:
+        value = (value or "").strip()
+        legacy_map = {
+            "默认": "Default",
+            "护眼": "Eye Care",
+            "深色": "Dark",
+            "纸张": "Brown",
+        }
+        theme = legacy_map.get(value, value)
+        for i in range(self.theme_combo.count()):
+            if self.theme_combo.itemData(i) == theme:
+                self.theme_combo.setCurrentIndex(i)
+                return
+        self.theme_combo.setCurrentIndex(0)
+
+    def _get_theme_id(self) -> str:
+        theme = self.theme_combo.currentData()
+        if isinstance(theme, str) and theme:
+            return theme
+        current_text = self.theme_combo.currentText()
+        fallback_map = {
+            "默认": "Default",
+            "护眼": "Eye Care",
+            "深色": "Dark",
+            "纸张": "Brown",
+        }
+        return fallback_map.get(current_text, "Default")
+
+    def _set_word_panel_empty_state(self) -> None:
+        self.current_word = None
+        self.current_context = None
+        self.current_meaning = None
+        self.ui.wordLabel.setText("点击单词或选中文本查词")
+        self.ui.meaningText.setHtml("<p style='color:#86868B;'>在左侧阅读区点击单词，或选中文本后右键选择“查词”。</p>")
+        self.ui.addToAnkiButton.setEnabled(False)
+        self.ui.imageLabel.setText("暂无图片")
+        self.ui.imageCountLabel.setText("")
+
+    def _restore_ui_state(self) -> None:
+        self._ui_settings.beginGroup("anki_reader/reader_window")
+        geometry = self._ui_settings.value("geometry")
+        if geometry:
+            self.restoreGeometry(geometry)
+        window_state = self._ui_settings.value("windowState")
+        if window_state:
+            self.restoreState(window_state)
+        splitter_sizes = self._ui_settings.value("splitterSizes")
+        if splitter_sizes:
+            try:
+                sizes = [int(x) for x in splitter_sizes]
+                self.ui.splitter.setSizes(sizes)
+            except Exception:
+                pass
+        self._ui_settings.endGroup()
+
+    def _save_ui_state(self) -> None:
+        self._ui_settings.beginGroup("anki_reader/reader_window")
+        self._ui_settings.setValue("geometry", self.saveGeometry())
+        self._ui_settings.setValue("windowState", self.saveState())
+        self._ui_settings.setValue("splitterSizes", self.ui.splitter.sizes())
+        self._ui_settings.endGroup()
+
+    def closeEvent(self, event):
+        self._save_ui_state()
+        super().closeEvent(event)
+
     def open_file(self):
         """打开文件"""
         file_name, _ = QFileDialog.getOpenFileName(
             self,
             "打开文件",
             "",
-            "EPUB Files (*.epub);;Text Files (*.txt);;All Files (*)"
+            "EPUB 文件 (*.epub);;文本文件 (*.txt);;所有文件 (*)"
         )
         if file_name:
             try:
@@ -862,7 +1052,10 @@ class ReaderWindow(QMainWindow):
     
     def get_current_text_align(self):
         """取前文本对齐方式"""
-        return "left" if self.align_combo.currentText() == "左对齐" else "justify"
+        align = self.align_combo.currentData()
+        if align in ("left", "justify"):
+            return align
+        return "left"
 
     def setup_menu(self):
         """设置菜单"""
@@ -874,7 +1067,7 @@ class ReaderWindow(QMainWindow):
         self.ui.menuFile.addAction(self.ui.actionExit)
         
         # 设置菜单
-        self.ui.menuSettings = QMenu("Settings(&S)")
+        self.ui.menuSettings = QMenu("设置(&S)")
         self.ui.menubar.addMenu(self.ui.menuSettings)
         
         # 添加设置菜单项
@@ -950,7 +1143,7 @@ class ReaderWindow(QMainWindow):
     def show_current_image(self):
         """显示当前索引的图片"""
         if not self.current_images:
-            self.ui.imageLabel.setText("No image available")
+            self.ui.imageLabel.setText("暂无图片")
             return
             
         current_path = self.current_images[self.current_image_index]
@@ -978,13 +1171,16 @@ class ReaderWindow(QMainWindow):
         self.ui.nextImageButton.setEnabled(has_images and self.current_image_index < len(self.current_images) - 1)
         
         if has_images:
-            self.ui.imageCountLabel.setText(f"Image {self.current_image_index + 1} of {len(self.current_images)}")
+            text = f"{self.current_image_index + 1}/{len(self.current_images)}"
+            self.ui.imageCountLabel.setText(text)
+            self.image_count_label.setText(f"图片 {text}")
         else:
             self.ui.imageCountLabel.setText("")
+            self.image_count_label.setText("")
     
     def on_image_error(self, error_message):
         """当图片搜索出错时的回调"""
-        self.ui.imageLabel.setText(f"Error: {error_message}")
+        self.ui.imageLabel.setText(f"图片加载失败：{error_message}")
         self.current_images = []
         self.current_image_index = 0
         self.update_image_navigation()
@@ -1000,7 +1196,7 @@ class EPUBManagerDialog(QDialog):
         
     def setup_ui(self):
         """设置UI"""
-        self.setWindowTitle("EPUB Manager")
+        self.setWindowTitle("书籍管理")
         self.setMinimumWidth(800)
         self.setMinimumHeight(500)
         
@@ -1010,7 +1206,7 @@ class EPUBManagerDialog(QDialog):
         # 创建表格
         self.table = QTableWidget()
         self.table.setColumnCount(7)  # 增加了章节数和阅读进度列
-        self.table.setHorizontalHeaderLabels(["Title", "Author", "Language", "Chapters", "Progress", "Added Time", "Actions"])
+        self.table.setHorizontalHeaderLabels(["书名", "作者", "语言", "章节", "进度", "添加时间", "操作"])
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
@@ -1029,19 +1225,19 @@ class EPUBManagerDialog(QDialog):
         button_layout = QHBoxLayout()
         
         # 添加打开按钮
-        self.open_btn = QPushButton("Open Selected Book")
+        self.open_btn = QPushButton("打开选中的书籍")
         self.open_btn.clicked.connect(self.open_selected_book)
         button_layout.addWidget(self.open_btn)
         
         # 添加导入按钮
-        self.import_btn = QPushButton("Import New Book")
+        self.import_btn = QPushButton("导入新书")
         self.import_btn.clicked.connect(self.import_new_book)
         button_layout.addWidget(self.import_btn)
         
         button_layout.addStretch()
         
         # 添加关闭按钮
-        close_btn = QPushButton("Close")
+        close_btn = QPushButton("关闭")
         close_btn.clicked.connect(self.accept)
         button_layout.addWidget(close_btn)
         
@@ -1087,17 +1283,17 @@ class EPUBManagerDialog(QDialog):
             btn_layout.setContentsMargins(2, 2, 2, 2)
             
             # 删除按钮
-            delete_btn = QPushButton("Delete")
+            delete_btn = QPushButton("删除")
             delete_btn.clicked.connect(lambda checked, book_id=book[0]: self.delete_book(book_id))
             btn_layout.addWidget(delete_btn)
             
             self.table.setCellWidget(row, 6, btn_widget)
     
     def open_selected_book(self):
-        """Open Selected Book"""
+        """打开选中的书籍"""
         selected_items = self.table.selectedItems()
         if not selected_items:
-            QMessageBox.warning(self, "Warning", "Please select a book to open.")
+            QMessageBox.warning(self, "提示", "请先选择一本书。")
             return
             
         book_id = self.table.item(selected_items[0].row(), 0).data(Qt.ItemDataRole.UserRole)
@@ -1158,11 +1354,11 @@ class EPUBManagerDialog(QDialog):
             self.load_books()  # 重新加载书籍列表
             
     def delete_book(self, book_id: int):
-        """Delete Book"""
+        """删除书籍"""
         reply = QMessageBox.question(
             self,
-            "Confirm Deletion",
-            "Are you sure you want to delete this book?",
+            "确认删除",
+            "确定要删除这本书吗？",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )
@@ -1194,11 +1390,11 @@ class SettingsDialog(QDialog):
         layout = QVBoxLayout()
         
         # 服务类型选择
-        service_group = QGroupBox("AI Service")
+        service_group = QGroupBox("AI 服务")
         service_layout = QVBoxLayout()
         
         self.service_combo = QComboBox()
-        self.service_combo.addItems(["OpenAI", "Custom"])
+        self.service_combo.addItems(["OpenAI", "自定义"])
         service_layout.addWidget(self.service_combo)
         
         # OpenAI设置
@@ -1211,12 +1407,12 @@ class SettingsDialog(QDialog):
         
         self.model_edit = QLineEdit()
         self.model_edit.setText("gpt-3.5-turbo")
-        openai_layout.addRow("AI Model:", self.model_edit)
+        openai_layout.addRow("模型：", self.model_edit)
         
         self.openai_group.setLayout(openai_layout)
         
         # 自定义服务设置
-        self.custom_group = QGroupBox("Custom")
+        self.custom_group = QGroupBox("自定义")
         custom_layout = QFormLayout()
         
         self.custom_key_edit = QLineEdit()
@@ -1224,14 +1420,14 @@ class SettingsDialog(QDialog):
         custom_layout.addRow("API:", self.custom_key_edit)
         
         self.endpoint_edit = QLineEdit()
-        custom_layout.addRow("API endpoint:", self.endpoint_edit)
+        custom_layout.addRow("API 地址：", self.endpoint_edit)
         
         self.custom_model_edit = QLineEdit()
         self.custom_model_edit.setPlaceholderText("例如: gpt-3.5-turbo")
-        custom_layout.addRow("AI model:", self.custom_model_edit)
+        custom_layout.addRow("模型：", self.custom_model_edit)
         
         # 添加测试连接按钮
-        self.test_btn = QPushButton("Test Connection")
+        self.test_btn = QPushButton("测试连接")
         self.test_btn.clicked.connect(self.test_connection)
         custom_layout.addRow("", self.test_btn)
         
@@ -1276,20 +1472,20 @@ class SettingsDialog(QDialog):
             client = AIFactory.create_client("custom", config)
             
             # 运行测试
-            response = run_async(client.explain("Test Connection"))
+            response = run_async(client.explain("测试连接"))
             
             if response.error:
                 raise Exception(response.error)
                 
-            QMessageBox.information(self, "Success", "Connection test success！")
+            QMessageBox.information(self, "成功", "连接测试成功！")
             
         except Exception as e:
-            QMessageBox.critical(self, "Failed", f"Connection test failed：{str(e)}")
+            QMessageBox.critical(self, "失败", f"连接测试失败：{str(e)}")
             
         finally:
             # 恢复测试按钮
             self.test_btn.setEnabled(True)
-            self.test_btn.setText("Test Connection")
+            self.test_btn.setText("测试连接")
         
     def on_service_changed(self, index):
         """理服务类型切换"""

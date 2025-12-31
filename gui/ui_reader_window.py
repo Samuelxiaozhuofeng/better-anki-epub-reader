@@ -18,7 +18,7 @@ class Ui_ReaderWindow(object):
                 font-family: "SF Pro Text", "-apple-system", "Microsoft YaHei";
                 font-size: 16px;
                 line-height: 1.6;
-                selection-background-color: #0000FF;  # Changed to fully opaque blue
+                selection-background-color: #CFE4FF;
                 color: #1D1D1F;
             }
             QLabel {
@@ -28,20 +28,24 @@ class Ui_ReaderWindow(object):
                 padding: 5px;
             }
             QPushButton {
-                background-color: #007AFF;
-                color: white;
-                border: none;
-                padding: 8px 16px;
+                background-color: #FFFFFF;
+                color: #1D1D1F;
+                border: 1px solid #D2D2D7;
+                padding: 6px 12px;
                 border-radius: 6px;
                 font-family: "SF Pro Text", "-apple-system", "Microsoft YaHei";
                 font-size: 13px;
                 font-weight: 500;
             }
             QPushButton:hover {
-                background-color: #0066D6;
+                background-color: #F5F5F7;
             }
             QPushButton:pressed {
-                background-color: #0051A8;
+                background-color: #E5E5EA;
+            }
+            QPushButton:disabled {
+                color: #86868B;
+                background-color: #F5F5F7;
             }
             QToolBar {
                 background-color: #F5F5F7;
@@ -61,11 +65,6 @@ class Ui_ReaderWindow(object):
             QComboBox::drop-down {
                 border: none;
                 width: 20px;
-            }
-            QComboBox::down-arrow {
-                image: url(icons/down-arrow.png);
-                width: 12px;
-                height: 12px;
             }
             QMenuBar {
                 background-color: #F5F5F7;
@@ -178,9 +177,9 @@ class Ui_ReaderWindow(object):
                 font-weight: 600;
                 color: #1D1D1F;
                 padding: 16px;
-                background-color: #FAF3E0;
-                border-radius: 8px;
-                border: 1px solid #D2D2D7;
+                background-color: #FFFFFF;
+                border-radius: 10px;
+                border: 1px solid #E5E5EA;
             }
         """)
         self.wordLabel.setWordWrap(True)  # 允许标签文字换行
@@ -211,12 +210,12 @@ class Ui_ReaderWindow(object):
         self.meaningText.setAcceptRichText(True)
         self.meaningText.setStyleSheet("""
             QTextEdit {
-                background-color: #FAF3E0;
-                border-radius: 12px;
-                border: 1px solid #D2D2D7;
-                padding: 22px;
-                font-size: 22px;
-                line-height: 1.2;
+                background-color: #FFFFFF;
+                border-radius: 10px;
+                border: 1px solid #E5E5EA;
+                padding: 16px;
+                font-size: 14px;
+                line-height: 1.5;
                 font-family: "SF Pro Text", "-apple-system", "PingFang SC", "Microsoft YaHei";
                 color: #1D1D1F;
                 letter-spacing: 0.01em;
@@ -282,9 +281,9 @@ class Ui_ReaderWindow(object):
         self.imageLabel.setMinimumHeight(300)
         self.imageLabel.setStyleSheet("""
             QLabel {
-                background-color: #FAF3E0;
-                border-radius: 12px;
-                border: 1px solid #D2D2D7;
+                background-color: #FFFFFF;
+                border-radius: 10px;
+                border: 1px solid #E5E5EA;
                 padding: 10px;
             }
         """)
@@ -298,7 +297,7 @@ class Ui_ReaderWindow(object):
         self.meaningScroll.setWidget(self.meaningContainer)
         self.word_main_layout.addWidget(self.meaningScroll, 1)
         
-        self.addToAnkiButton = QPushButton("Add to Anki")
+        self.addToAnkiButton = QPushButton("添加到 Anki")
         self.addToAnkiButton.setStyleSheet("""
             QPushButton {
                 background-color: #007AFF;
@@ -316,6 +315,10 @@ class Ui_ReaderWindow(object):
             }
             QPushButton:pressed {
                 background-color: #0051A8;
+            }
+            QPushButton:disabled {
+                background-color: #D2D2D7;
+                color: #FFFFFF;
             }
         """)
         self.word_main_layout.addWidget(self.addToAnkiButton)
@@ -336,11 +339,11 @@ class Ui_ReaderWindow(object):
         self.menubar.setGeometry(QRect(0, 0, 1200, 22))
         
         # 文件菜单
-        self.menuFile = QMenu("File(&F)", self.menubar)
-        self.actionOpen = QAction("Open(&O)", ReaderWindow)
-        self.actionSave = QAction("Save(&S)", ReaderWindow)
-        self.actionSaveAs = QAction("Save As(&A)", ReaderWindow)
-        self.actionExit = QAction("Exit(&X)", ReaderWindow)
+        self.menuFile = QMenu("文件(&F)", self.menubar)
+        self.actionOpen = QAction("打开(&O)", ReaderWindow)
+        self.actionSave = QAction("保存(&S)", ReaderWindow)
+        self.actionSaveAs = QAction("另存为(&A)", ReaderWindow)
+        self.actionExit = QAction("退出(&X)", ReaderWindow)
         
         # 设置菜单栏
         ReaderWindow.setMenuBar(self.menubar)
@@ -370,10 +373,10 @@ class Ui_ReaderWindow(object):
             }
         """
         
-        self.prev_chapter_btn = QPushButton("Previous Chapter")
+        self.prev_chapter_btn = QPushButton("上一章")
         self.prev_chapter_btn.setStyleSheet(nav_button_style)
         self.chapter_combo = QComboBox()
-        self.next_chapter_btn = QPushButton("Next Chapter")
+        self.next_chapter_btn = QPushButton("下一章")
         self.next_chapter_btn.setStyleSheet(nav_button_style)
         
         self.chapter_toolbar.addWidget(self.prev_chapter_btn)
@@ -396,9 +399,9 @@ class Ui_ReaderWindow(object):
         QMetaObject.connectSlotsByName(ReaderWindow)
     
     def retranslateUi(self, ReaderWindow):
-        ReaderWindow.setWindowTitle("Anki Reader")
-        self.menuFile.setTitle("File(&F)")
-        self.actionOpen.setText("Open(&O)")
-        self.actionSave.setText("Save(&S)")
-        self.actionSaveAs.setText("Save As(&A)")
-        self.actionExit.setText("Exit(&X)")
+        ReaderWindow.setWindowTitle("阅读器")
+        self.menuFile.setTitle("文件(&F)")
+        self.actionOpen.setText("打开(&O)")
+        self.actionSave.setText("保存(&S)")
+        self.actionSaveAs.setText("另存为(&A)")
+        self.actionExit.setText("退出(&X)")
