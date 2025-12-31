@@ -15,7 +15,7 @@ from ..utils.anki_handler import AnkiHandler
 from ..utils.image_handler import ImageHandler
 from .note_settings_dialog import NoteSettingsDialog
 from .template_dialog import TemplateDialog
-from .settings_dialog import SettingsDialog, ContextSettingsDialog, CONFIG_PATH
+from .settings_dialog import AIServiceSettingsDialog, ContextSettingsDialog, CONFIG_PATH
 from .ui_reader_window import Ui_ReaderWindow
 from ..utils.text_utils import TextContextExtractor
 
@@ -487,7 +487,7 @@ class ReaderWindow(QMainWindow):
     
     def show_ai_settings(self):
         """显示AI服务设置对话框"""
-        dialog = SettingsDialog(self)
+        dialog = AIServiceSettingsDialog(self)
         if dialog.exec():
             self.load_ai_client()
             
@@ -1373,171 +1373,3 @@ class EPUBManagerDialog(QDialog):
                     self.parent.current_chapter_index = 0
                     self.parent.textEdit.clear()
                     self.parent.ui.chapter_combo.clear()
-
-
-class SettingsDialog(QDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.parent = parent
-        self.setup_ui()
-        self.load_settings()
-        
-    def setup_ui(self):
-        """设置UI"""
-        self.setWindowTitle("设置")
-        self.setMinimumWidth(400)
-        
-        layout = QVBoxLayout()
-        
-        # 服务类型选择
-        service_group = QGroupBox("AI 服务")
-        service_layout = QVBoxLayout()
-        
-        self.service_combo = QComboBox()
-        self.service_combo.addItems(["OpenAI", "自定义"])
-        service_layout.addWidget(self.service_combo)
-        
-        # OpenAI设置
-        self.openai_group = QGroupBox("OpenAI")
-        openai_layout = QFormLayout()
-        
-        self.api_key_edit = QLineEdit()
-        self.api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
-        openai_layout.addRow("API:", self.api_key_edit)
-        
-        self.model_edit = QLineEdit()
-        self.model_edit.setText("gpt-3.5-turbo")
-        openai_layout.addRow("模型：", self.model_edit)
-        
-        self.openai_group.setLayout(openai_layout)
-        
-        # 自定义服务设置
-        self.custom_group = QGroupBox("自定义")
-        custom_layout = QFormLayout()
-        
-        self.custom_key_edit = QLineEdit()
-        self.custom_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
-        custom_layout.addRow("API:", self.custom_key_edit)
-        
-        self.endpoint_edit = QLineEdit()
-        custom_layout.addRow("API 地址：", self.endpoint_edit)
-        
-        self.custom_model_edit = QLineEdit()
-        self.custom_model_edit.setPlaceholderText("例如: gpt-3.5-turbo")
-        custom_layout.addRow("模型：", self.custom_model_edit)
-        
-        # 添加测试连接按钮
-        self.test_btn = QPushButton("测试连接")
-        self.test_btn.clicked.connect(self.test_connection)
-        custom_layout.addRow("", self.test_btn)
-        
-        self.custom_group.setLayout(custom_layout)
-        
-        # 添��所有组件到主布局
-        service_group.setLayout(service_layout)
-        layout.addWidget(service_group)
-        layout.addWidget(self.openai_group)
-        layout.addWidget(self.custom_group)
-        
-        # 按钮
-        button_box = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | 
-            QDialogButtonBox.StandardButton.Cancel
-        )
-        button_box.accepted.connect(self.accept)
-        button_box.rejected.connect(self.reject)
-        layout.addWidget(button_box)
-        
-        self.setLayout(layout)
-        
-        # 连接信号
-        self.service_combo.currentIndexChanged.connect(self.on_service_changed)
-        self.on_service_changed(0)
-        
-    def test_connection(self):
-        """测试自定义服务连接"""
-        try:
-            # 禁测试按钮
-            self.test_btn.setEnabled(False)
-            self.test_btn.setText("测试中...")
-            
-            # 创建临时配置
-            config = {
-                "api_key": self.custom_key_edit.text(),
-                "endpoint": self.endpoint_edit.text(),
-                "model": self.custom_model_edit.text()
-            }
-            
-            # 创建临时客户端
-            client = AIFactory.create_client("custom", config)
-            
-            # 运行测试
-            response = run_async(client.explain("测试连接"))
-            
-            if response.error:
-                raise Exception(response.error)
-                
-            QMessageBox.information(self, "成功", "连接测试成功！")
-            
-        except Exception as e:
-            QMessageBox.critical(self, "失败", f"连接测试失败：{str(e)}")
-            
-        finally:
-            # 恢复测试按钮
-            self.test_btn.setEnabled(True)
-            self.test_btn.setText("测试连接")
-        
-    def on_service_changed(self, index):
-        """理服务类型切换"""
-        is_openai = index == 0
-        self.openai_group.setVisible(is_openai)
-        self.custom_group.setVisible(not is_openai)
-        
-    def load_settings(self):
-        """加载设置"""
-        try:
-            config_path = os.path.join(mw.pm.addonFolder(), "anki_reader", "config.json")
-            if os.path.exists(config_path):
-                with open(config_path, 'r', encoding='utf-8') as f:
-                    config = json.load(f)
-                    
-                    # 设置服务类型
-                    service_type = config.get("service_type", "openai").lower()
-                    self.service_combo.setCurrentIndex(0 if service_type == "openai" else 1)
-                    
-                    # 设置OpenAI配置
-                    if "openai" in config:
-                        self.api_key_edit.setText(config["openai"].get("api_key", ""))
-                        self.model_edit.setText(config["openai"].get("model", "gpt-3.5-turbo"))
-                    
-                    # 设置自定义服务配置
-                    if "custom" in config:
-                        self.custom_key_edit.setText(config["custom"].get("api_key", ""))
-                        self.endpoint_edit.setText(config["custom"].get("endpoint", ""))
-                        self.custom_model_edit.setText(config["custom"].get("model", ""))
-        except Exception as e:
-            print(f"加载设置失败: {str(e)}")
-            
-    def accept(self):
-        """保存设置"""
-        try:
-            config = {
-                "service_type": "openai" if self.service_combo.currentIndex() == 0 else "custom",
-                "openai": {
-                    "api_key": self.api_key_edit.text(),
-                    "model": self.model_edit.text()
-                },
-                "custom": {
-                    "api_key": self.custom_key_edit.text(),
-                    "endpoint": self.endpoint_edit.text(),
-                    "model": self.custom_model_edit.text()
-                }
-            }
-            
-            config_path = os.path.join(mw.pm.addonFolder(), "anki_reader", "config.json")
-            with open(config_path, 'w', encoding='utf-8') as f:
-                json.dump(config, f, indent=4, ensure_ascii=False)
-                
-            super().accept()
-        except Exception as e:
-            QMessageBox.critical(self, "错误", f"保存设置失败: {str(e)}")

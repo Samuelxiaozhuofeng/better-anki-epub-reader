@@ -10,6 +10,67 @@ from ..utils.template_manager import TemplateManager
 
 CONFIG_PATH = os.path.join(mw.pm.addonFolder(), "anki_reader", "config.json")
 
+DIALOG_QSS = """
+    QDialog {
+        background-color: #FFFFFF;
+    }
+    QLabel {
+        color: #1D1D1F;
+        font-family: "SF Pro Text", "-apple-system", "PingFang SC", "Microsoft YaHei";
+    }
+    QGroupBox {
+        border: 1px solid #E5E5EA;
+        border-radius: 10px;
+        margin-top: 12px;
+        padding: 10px;
+        font-family: "SF Pro Text", "-apple-system", "PingFang SC", "Microsoft YaHei";
+    }
+    QGroupBox::title {
+        subcontrol-origin: margin;
+        left: 12px;
+        padding: 0 6px;
+        color: #1D1D1F;
+        font-weight: 600;
+    }
+    QLineEdit, QTextEdit, QPlainTextEdit {
+        background-color: #FFFFFF;
+        border: 1px solid #D2D2D7;
+        border-radius: 8px;
+        padding: 6px 10px;
+    }
+    QComboBox {
+        background-color: #FFFFFF;
+        border: 1px solid #D2D2D7;
+        border-radius: 8px;
+        padding: 6px 10px;
+        min-width: 180px;
+    }
+    QPushButton {
+        background-color: #FFFFFF;
+        color: #1D1D1F;
+        border: 1px solid #D2D2D7;
+        border-radius: 8px;
+        padding: 6px 12px;
+    }
+    QPushButton:hover {
+        background-color: #F5F5F7;
+    }
+    QPushButton:pressed {
+        background-color: #E5E5EA;
+    }
+    QPushButton[primary="true"] {
+        background-color: #007AFF;
+        color: #FFFFFF;
+        border: none;
+    }
+    QPushButton[primary="true"]:hover {
+        background-color: #0066D6;
+    }
+    QPushButton[primary="true"]:pressed {
+        background-color: #0051A8;
+    }
+"""
+
 def run_async(coro):
     """运行异步函数"""
     try:
@@ -30,38 +91,35 @@ def run_async(coro):
 class ContextSettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Context Settings")
+        self.setWindowTitle("上下文设置")
         self.setMinimumWidth(400)
+        self.setStyleSheet(DIALOG_QSS)
         
         # 创建主布局
         self.main_layout = QVBoxLayout()
         self.setLayout(self.main_layout)
         
         # AI上下文设置组
-        self.ai_context_group = QGroupBox("AI Context Settings")
+        self.ai_context_group = QGroupBox("AI 上下文范围")
         ai_context_layout = QVBoxLayout()
         
-        self.ai_context_type_label = QLabel("AI Context Range:")
+        self.ai_context_type_label = QLabel("AI 上下文：")
         self.ai_context_type_combo = QComboBox()
-        self.ai_context_type_combo.addItems([
-            "Current Sentence Only",
-            "Current Sentence with Adjacent (1 Sentence)"
-        ])
+        self.ai_context_type_combo.addItem("仅当前句子", "Current Sentence Only")
+        self.ai_context_type_combo.addItem("当前句子 + 前后各 1 句", "Current Sentence with Adjacent (1 Sentence)")
         
         ai_context_layout.addWidget(self.ai_context_type_label)
         ai_context_layout.addWidget(self.ai_context_type_combo)
         self.ai_context_group.setLayout(ai_context_layout)
         
         # Anki上下文设置组
-        self.anki_context_group = QGroupBox("Anki Context Settings")
+        self.anki_context_group = QGroupBox("Anki 上下文范围")
         anki_context_layout = QVBoxLayout()
         
-        self.anki_context_type_label = QLabel("Anki Context Range:")
+        self.anki_context_type_label = QLabel("Anki 上下文：")
         self.anki_context_type_combo = QComboBox()
-        self.anki_context_type_combo.addItems([
-            "Current Sentence Only",
-            "Current Sentence with Adjacent (1 Sentence)"
-        ])
+        self.anki_context_type_combo.addItem("仅当前句子", "Current Sentence Only")
+        self.anki_context_type_combo.addItem("当前句子 + 前后各 1 句", "Current Sentence with Adjacent (1 Sentence)")
         
         anki_context_layout.addWidget(self.anki_context_type_label)
         anki_context_layout.addWidget(self.anki_context_type_combo)
@@ -93,17 +151,19 @@ class ContextSettingsDialog(QDialog):
                     
                     # 设置AI上下文类型
                     ai_context_type = config.get("ai_context_type", "Current Sentence Only")
-                    index = self.ai_context_type_combo.findText(ai_context_type)
-                    if index >= 0:
-                        self.ai_context_type_combo.setCurrentIndex(index)
+                    for i in range(self.ai_context_type_combo.count()):
+                        if self.ai_context_type_combo.itemData(i) == ai_context_type:
+                            self.ai_context_type_combo.setCurrentIndex(i)
+                            break
                         
                     # 设置Anki上下文类型
                     anki_context_type = config.get("anki_context_type", "Current Sentence Only")
-                    index = self.anki_context_type_combo.findText(anki_context_type)
-                    if index >= 0:
-                        self.anki_context_type_combo.setCurrentIndex(index)
+                    for i in range(self.anki_context_type_combo.count()):
+                        if self.anki_context_type_combo.itemData(i) == anki_context_type:
+                            self.anki_context_type_combo.setCurrentIndex(i)
+                            break
         except Exception as e:
-            QMessageBox.warning(self, "Error", f"Failed to load configuration: {str(e)}")
+            QMessageBox.warning(self, "错误", f"加载配置失败：{str(e)}")
     
     def accept(self):
         """保存设置"""
@@ -115,8 +175,8 @@ class ContextSettingsDialog(QDialog):
                     config = json.load(f)
             
             # 更新上下文设置
-            config["ai_context_type"] = self.ai_context_type_combo.currentText()
-            config["anki_context_type"] = self.anki_context_type_combo.currentText()
+            config["ai_context_type"] = self.ai_context_type_combo.currentData()
+            config["anki_context_type"] = self.anki_context_type_combo.currentData()
             
             # 保存配置
             with open(CONFIG_PATH, 'w', encoding='utf-8') as f:
@@ -124,33 +184,35 @@ class ContextSettingsDialog(QDialog):
             
             super().accept()
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to save settings: {str(e)}")
+            QMessageBox.critical(self, "错误", f"保存设置失败：{str(e)}")
 
 class AIServiceSettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("AI Service Settings")
+        self.setWindowTitle("AI 服务设置")
         self.setMinimumWidth(400)
+        self.setStyleSheet(DIALOG_QSS)
         
         # 创建主布局
         self.main_layout = QVBoxLayout()
         self.setLayout(self.main_layout)
         
         # 创建AI服务设置组
-        self.service_group = QGroupBox("AI Service")
+        self.service_group = QGroupBox("AI 服务")
         service_layout = QVBoxLayout()
         
         # 服务类型选择
-        self.service_type_label = QLabel("Service Type:")
+        self.service_type_label = QLabel("服务类型：")
         self.service_type_combo = QComboBox()
-        self.service_type_combo.addItems(["OpenAI", "Custom Service"])
+        self.service_type_combo.addItem("OpenAI", "openai")
+        self.service_type_combo.addItem("自定义", "custom")
         self.service_type_combo.currentIndexChanged.connect(self.on_service_changed)
         
         service_layout.addWidget(self.service_type_label)
         service_layout.addWidget(self.service_type_combo)
         
         # OpenAI设置
-        self.openai_group = QGroupBox("OpenAI Settings")
+        self.openai_group = QGroupBox("OpenAI 设置")
         openai_layout = QFormLayout()
         
         self.api_key_edit = QLineEdit()
@@ -159,13 +221,13 @@ class AIServiceSettingsDialog(QDialog):
         self.model_combo = QComboBox()
         self.model_combo.addItems(["gpt-3.5-turbo", "gpt-4"])
         
-        openai_layout.addRow("API Key:", self.api_key_edit)
-        openai_layout.addRow("API Base:", self.api_base_edit)
-        openai_layout.addRow("Model:", self.model_combo)
+        openai_layout.addRow("API Key：", self.api_key_edit)
+        openai_layout.addRow("API Base：", self.api_base_edit)
+        openai_layout.addRow("模型：", self.model_combo)
         self.openai_group.setLayout(openai_layout)
         
         # 自定义服务设置
-        self.custom_group = QGroupBox("Custom Service Settings")
+        self.custom_group = QGroupBox("自定义服务设置")
         custom_layout = QFormLayout()
         
         self.custom_api_key_edit = QLineEdit()
@@ -174,12 +236,13 @@ class AIServiceSettingsDialog(QDialog):
         self.custom_model_combo = QComboBox()
         self.custom_model_combo.setEditable(True)
         
-        custom_layout.addRow("API Key:", self.custom_api_key_edit)
-        custom_layout.addRow("API Base:", self.custom_base_edit)
-        custom_layout.addRow("Model:", self.custom_model_combo)
+        custom_layout.addRow("API Key：", self.custom_api_key_edit)
+        custom_layout.addRow("API Base：", self.custom_base_edit)
+        custom_layout.addRow("模型：", self.custom_model_combo)
         
         # 测试连接按钮
-        self.test_button = QPushButton("Test Connection")
+        self.test_button = QPushButton("测试连接")
+        self.test_button.setProperty("primary", True)
         custom_layout.addRow("", self.test_button)
         
         self.custom_group.setLayout(custom_layout)
@@ -212,7 +275,7 @@ class AIServiceSettingsDialog(QDialog):
     
     def on_service_changed(self, index):
         """处理服务类型切换"""
-        is_openai = index == 0
+        is_openai = self.service_type_combo.itemData(index) == "openai"
         self.openai_group.setVisible(is_openai)
         self.custom_group.setVisible(not is_openai)
     
@@ -224,10 +287,19 @@ class AIServiceSettingsDialog(QDialog):
                     config = json.load(f)
                     
                     # 设置服务类型
-                    service_type = config.get("service_type", "OpenAI")
-                    index = self.service_type_combo.findText(service_type)
-                    if index >= 0:
-                        self.service_type_combo.setCurrentIndex(index)
+                    service_type_raw = str(config.get("service_type", "openai"))
+                    service_type_norm = service_type_raw.lower().replace(" ", "")
+                    if "openai" in service_type_norm:
+                        service_type = "openai"
+                    elif "custom" in service_type_norm:
+                        service_type = "custom"
+                    else:
+                        service_type = "openai"
+
+                    for i in range(self.service_type_combo.count()):
+                        if self.service_type_combo.itemData(i) == service_type:
+                            self.service_type_combo.setCurrentIndex(i)
+                            break
                     
                     # OpenAI设置
                     openai_config = config.get("openai", {})
@@ -245,11 +317,11 @@ class AIServiceSettingsDialog(QDialog):
                     model = custom_config.get("model", "gpt-3.5-turbo")
                     self.custom_model_combo.setCurrentText(model)
         except Exception as e:
-            QMessageBox.warning(self, "Error", f"Failed to load configuration: {str(e)}")
+            QMessageBox.warning(self, "错误", f"加载配置失败：{str(e)}")
     
     def get_current_config(self) -> Dict:
         """获取当前配置"""
-        is_openai = self.service_type_combo.currentText() == "OpenAI"
+        is_openai = self.service_type_combo.currentData() == "openai"
         
         if is_openai:
             return {
@@ -266,18 +338,18 @@ class AIServiceSettingsDialog(QDialog):
     
     def validate_config(self) -> bool:
         """验证配置"""
-        is_openai = self.service_type_combo.currentText() == "OpenAI"
+        is_openai = self.service_type_combo.currentData() == "openai"
         
         if is_openai:
             if not self.api_key_edit.text().strip():
-                QMessageBox.warning(self, "Error", "Please enter OpenAI API Key")
+                QMessageBox.warning(self, "错误", "请输入 OpenAI API Key。")
                 return False
         else:
             if not self.custom_api_key_edit.text().strip():
-                QMessageBox.warning(self, "Error", "Please enter API Key")
+                QMessageBox.warning(self, "错误", "请输入 API Key。")
                 return False
             if not self.custom_base_edit.text().strip():
-                QMessageBox.warning(self, "Error", "Please enter API Base")
+                QMessageBox.warning(self, "错误", "请输入 API Base。")
                 return False
         
         return True
@@ -295,7 +367,7 @@ class AIServiceSettingsDialog(QDialog):
                     config = json.load(f)
             
             # 更新AI服务设置
-            config["service_type"] = self.service_type_combo.currentText()
+            config["service_type"] = self.service_type_combo.currentData()
             config["openai"] = {
                 "api_key": self.api_key_edit.text(),
                 "api_base": self.api_base_edit.text(),
@@ -313,7 +385,7 @@ class AIServiceSettingsDialog(QDialog):
             
             super().accept()
         except Exception as e:
-            QMessageBox.critical(self, "Error", f"Failed to save settings: {str(e)}")
+            QMessageBox.critical(self, "错误", f"保存设置失败：{str(e)}")
     
     def test_connection(self):
         """测试连接"""
@@ -321,33 +393,34 @@ class AIServiceSettingsDialog(QDialog):
             return
         
         self.test_button.setEnabled(False)
-        self.test_button.setText("Testing...")
+        self.test_button.setText("测试中...")
         
         try:
             config = self.get_current_config()
-            service_type = self.service_type_combo.currentText().lower().replace(" ", "")
+            service_type = self.service_type_combo.currentData()
             
             client = AIFactory.create_client(service_type, config)
             if not client:
-                QMessageBox.warning(self, "Error", "Failed to create client, please check configuration")
+                QMessageBox.warning(self, "错误", "无法创建客户端，请检查配置。")
                 return
             
             try:
-                response = run_async(client.translate("Hello, world!"))
+                response = run_async(client.explain("测试连接"))
                 if response.error:
                     raise Exception(response.error)
-                QMessageBox.information(self, "Success", "Connection test successful!")
+                QMessageBox.information(self, "成功", "连接测试成功！")
             except Exception as e:
-                QMessageBox.warning(self, "Error", f"Connection test failed: {str(e)}")
+                QMessageBox.warning(self, "错误", f"连接测试失败：{str(e)}")
         finally:
             self.test_button.setEnabled(True)
-            self.test_button.setText("Test Connection")
+            self.test_button.setText("测试连接")
 
 class SettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Settings")
+        self.setWindowTitle("设置")
         self.setMinimumWidth(300)
+        self.setStyleSheet(DIALOG_QSS)
         
         # 创建主布局
         self.main_layout = QVBoxLayout()
@@ -355,8 +428,8 @@ class SettingsDialog(QDialog):
         
         # 创建设置选项列表
         self.settings_list = QListWidget()
-        self.settings_list.addItem("AI Service")
-        self.settings_list.addItem("Context Settings")
+        self.settings_list.addItem("AI 服务")
+        self.settings_list.addItem("上下文设置")
         self.main_layout.addWidget(self.settings_list)
         
         # 添加按钮
@@ -371,9 +444,9 @@ class SettingsDialog(QDialog):
     
     def on_item_double_clicked(self, item):
         """处理设置项双击事件"""
-        if item.text() == "AI Service":
+        if item.text() == "AI 服务":
             dialog = AIServiceSettingsDialog(self)
             dialog.exec()
-        elif item.text() == "Context Settings":
+        elif item.text() == "上下文设置":
             dialog = ContextSettingsDialog(self)
             dialog.exec()

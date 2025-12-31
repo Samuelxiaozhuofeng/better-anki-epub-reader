@@ -1,10 +1,58 @@
 from aqt.qt import *
 from ..utils.template_manager import TemplateManager
 
+DIALOG_QSS = """
+    QDialog {
+        background-color: #FFFFFF;
+    }
+    QLabel {
+        color: #1D1D1F;
+        font-family: "SF Pro Text", "-apple-system", "PingFang SC", "Microsoft YaHei";
+    }
+    QLineEdit, QTextEdit {
+        background-color: #FFFFFF;
+        border: 1px solid #D2D2D7;
+        border-radius: 8px;
+        padding: 6px 10px;
+        font-family: "SF Pro Text", "-apple-system", "PingFang SC", "Microsoft YaHei";
+    }
+    QListWidget {
+        border: 1px solid #E5E5EA;
+        border-radius: 10px;
+        padding: 6px;
+    }
+    QPushButton {
+        background-color: #FFFFFF;
+        color: #1D1D1F;
+        border: 1px solid #D2D2D7;
+        border-radius: 8px;
+        padding: 6px 12px;
+        font-family: "SF Pro Text", "-apple-system", "PingFang SC", "Microsoft YaHei";
+    }
+    QPushButton:hover {
+        background-color: #F5F5F7;
+    }
+    QPushButton:pressed {
+        background-color: #E5E5EA;
+    }
+    QPushButton[primary="true"] {
+        background-color: #007AFF;
+        color: #FFFFFF;
+        border: none;
+    }
+    QPushButton[primary="true"]:hover {
+        background-color: #0066D6;
+    }
+    QPushButton[primary="true"]:pressed {
+        background-color: #0051A8;
+    }
+"""
+
 class TemplateDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Prompt Template Settings")
+        self.setWindowTitle("模板设置")
+        self.setStyleSheet(DIALOG_QSS)
         
         # Initialize template manager
         self.template_manager = TemplateManager()
@@ -37,12 +85,12 @@ class TemplateDialog(QDialog):
         list_layout = QVBoxLayout(list_panel)
         
         # Template list
-        list_label = QLabel("Template List")
+        list_label = QLabel("模板列表")
         list_label.setStyleSheet("""
             QLabel {
                 font-size: 14px;
                 font-weight: bold;
-                color: #2C3E50;
+                color: #1D1D1F;
                 margin-bottom: 10px;
             }
         """)
@@ -55,11 +103,11 @@ class TemplateDialog(QDialog):
         # Button group
         button_layout = QHBoxLayout()
         
-        self.add_btn = QPushButton("New Template")
+        self.add_btn = QPushButton("新建模板")
         self.add_btn.clicked.connect(self.add_template)
         button_layout.addWidget(self.add_btn)
         
-        self.delete_btn = QPushButton("Delete Template")
+        self.delete_btn = QPushButton("删除模板")
         self.delete_btn.clicked.connect(self.delete_template)
         button_layout.addWidget(self.delete_btn)
         
@@ -71,14 +119,14 @@ class TemplateDialog(QDialog):
         
         # Template name
         name_layout = QHBoxLayout()
-        name_label = QLabel("Template Name:")
+        name_label = QLabel("模板名称：")
         self.name_edit = QLineEdit()
         name_layout.addWidget(name_label)
         name_layout.addWidget(self.name_edit)
         edit_layout.addLayout(name_layout)
         
         # Template content
-        content_label = QLabel("Template Content:")
+        content_label = QLabel("模板内容：")
         content_label.setStyleSheet("""
             QLabel {
                 margin-top: 10px;
@@ -87,45 +135,31 @@ class TemplateDialog(QDialog):
         edit_layout.addWidget(content_label)
         
         self.content_edit = QTextEdit()
-        self.content_edit.setPlaceholderText("""Enter template content here...
+        self.content_edit.setPlaceholderText("""在这里输入模板内容...
 
-Available placeholders:
-{word} - Selected word or text
+可用占位符：
+{word} - 当前选中的单词/文本
 
-Example template:
-Please provide the following information for the word '{word}':
-1. Basic meaning (no more than 20 words)
-2. Part of speech
-3. Common collocations
-4. Example sentences""")
+示例：
+请解释单词「{word}」，要求：
+1. 基本含义（简洁）
+2. 词性
+3. 常见搭配
+4. 例句（可选）""")
         edit_layout.addWidget(self.content_edit)
         
         # Button layout
         buttons_layout = QHBoxLayout()
         
         # Save button
-        self.save_btn = QPushButton("Save Changes")
+        self.save_btn = QPushButton("保存修改")
+        self.save_btn.setProperty("primary", True)
         self.save_btn.clicked.connect(self.save_template)
         buttons_layout.addWidget(self.save_btn)
         
         # Use this template button
-        self.use_btn = QPushButton("Use This Template")
+        self.use_btn = QPushButton("设为当前模板")
         self.use_btn.clicked.connect(self.use_template)
-        self.use_btn.setStyleSheet("""
-            QPushButton {
-                background-color: #2ECC71;
-                color: white;
-                border: none;
-                padding: 8px 16px;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #27AE60;
-            }
-            QPushButton:disabled {
-                background-color: #95A5A6;
-            }
-        """)
         buttons_layout.addWidget(self.use_btn)
         
         edit_layout.addLayout(buttons_layout)
@@ -161,7 +195,7 @@ Please provide the following information for the word '{word}':
                     # Create list item
                     name = template["name"]
                     if template_id == self.current_template_id:
-                        name += " (Current)"
+                        name += "（当前）"
                     item = QListWidgetItem(name)
                     item.setData(Qt.ItemDataRole.UserRole, {
                         "id": template_id,
@@ -204,9 +238,9 @@ Please provide the following information for the word '{word}':
             # Refresh list display
             self.load_templates()
             
-            QMessageBox.information(self, "Success", "Template set as current")
+            QMessageBox.information(self, "成功", "已设置为当前模板。")
         else:
-            QMessageBox.warning(self, "Error", "Failed to set current template")
+            QMessageBox.warning(self, "错误", "设置当前模板失败。")
     
     def on_template_selected(self, current, previous):
         """Handle template selection change"""
@@ -218,8 +252,8 @@ Please provide the following information for the word '{word}':
             template_data = current.data(Qt.ItemDataRole.UserRole)
             template = self.template_manager.get_template("word_definition", template_data["id"])
             
-            # Remove "(Current)" suffix from name
-            name = current.text().replace(" (Current)", "")
+            # Remove current suffix from name
+            name = current.text().replace("（当前）", "")
             self.name_edit.setText(name)
             self.content_edit.setText(template)
             
@@ -236,8 +270,8 @@ Please provide the following information for the word '{word}':
     
     def add_template(self):
         """Add new template"""
-        name = "New Template"
-        template = "Please provide information for the word '{word}'..."
+        name = "新模板"
+        template = "请解释单词「{word}」，尽量简洁。"
         
         if self.template_manager.add_template("word_definition", name, template):
             self.load_templates()
@@ -255,7 +289,7 @@ Please provide the following information for the word '{word}':
         template = self.content_edit.toPlainText()
         
         if not name or not template:
-            QMessageBox.warning(self, "Error", "Template name and content cannot be empty!")
+            QMessageBox.warning(self, "错误", "模板名称和内容不能为空。")
             return
         
         # If default template, create a new custom template
@@ -270,12 +304,12 @@ Please provide the following information for the word '{word}':
                 })
                 self.template_list.addItem(new_item)
                 self.template_list.setCurrentItem(new_item)
-                QMessageBox.information(self, "Success", "New custom template created!")
+                QMessageBox.information(self, "成功", "已创建新的自定义模板。")
         else:
             # Save existing custom template
             if self.template_manager.add_template("word_definition", name, template, template_data["id"]):
                 current_item.setText(name)
-                QMessageBox.information(self, "Success", "Template saved successfully!")
+                QMessageBox.information(self, "成功", "模板已保存。")
         
         # Reload template list to ensure latest state
         self.load_templates()
@@ -291,13 +325,13 @@ Please provide the following information for the word '{word}':
         
         template_data = current_item.data(Qt.ItemDataRole.UserRole)
         if template_data["is_default"]:
-            QMessageBox.warning(self, "Error", "Default template cannot be deleted!")
+            QMessageBox.warning(self, "错误", "默认模板不能删除。")
             return
         
         reply = QMessageBox.question(
             self,
-            "Confirm Deletion",
-            "Are you sure you want to delete this template?",
+            "确认删除",
+            "确定要删除这个模板吗？",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No
         )
