@@ -1,5 +1,8 @@
-## ADDED Requirements
+# reader-ui Specification
 
+## Purpose
+TBD - created by archiving change update-reader-ui-modernization. Update Purpose after archive.
+## Requirements
 ### Requirement: UI 文案统一中文
 The system SHALL present reader UI labels and actions in Chinese consistently.
 
@@ -50,11 +53,10 @@ The system SHALL persist and restore reader window geometry and splitter positio
 - **WHEN** the user closes and reopens Anki and opens the reader window again
 - **THEN** the reader window restores the last window size/position and splitter layout
 
-## MODIFIED Requirements
-
 ### Requirement: UI changes do not break existing workflows
 The system SHALL preserve existing reader workflows (open content, navigate chapters, lookup words, add to Anki) while applying UI improvements.
 
 #### Scenario: Add note after UI refresh
 - **WHEN** the user looks up a word and clicks “add to Anki”
 - **THEN** a note is created using the configured deck/model/field mapping as before
+
