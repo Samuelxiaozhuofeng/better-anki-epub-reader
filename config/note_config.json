@@ -1,0 +1,10 @@
+{
+    "deck_name": "Default",
+    "model_name": "prettify-Japanese",
+    "field_mapping": {
+        "word": "pattern",
+        "meaning": "Back",
+        "context": "Front"
+    },
+    "tags": []
+}

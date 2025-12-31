@@ -1,0 +1,12 @@
+{
+    "name": "Anki Reader",
+    "package": "anki_reader",
+    "version": "0.1.0",
+    "ankiweb_id": "",
+    "homepage": "",
+    "min_anki_version": "2.1.50",
+    "max_tested_anki_version": "24.06.3",
+    "mod": 1,
+    "conflicts": [],
+    "requires": ["aiohttp", "ebooklib", "beautifulsoup4", "lxml"]
+}

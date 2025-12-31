@@ -1,0 +1,38 @@
+.DS_Store
+Thumbs.db
+
+# Local helper script with leading spaces in filename
+\ \ .py
+
+# Python bytecode / caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtualenvs / tooling
+.venv/
+venv/
+env/
+.env
+.python-version
+
+# Build / packaging artifacts
+build/
+dist/
+*.egg-info/
+*.ankiaddon
+
+# Vendored third-party dependencies (can be huge; commit only if you explicitly want vendoring in git)
+vendor/
+
+# Editor config
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Runtime-generated addon config (user-specific)
+config.json

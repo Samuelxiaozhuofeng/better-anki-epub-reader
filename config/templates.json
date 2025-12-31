@@ -1,0 +1,25 @@
+{
+    "current_template_id": "word_definition_2",
+    "word_definition": {
+        "default": {
+            "name": "基础释义模板",
+            "template": "请为单词 '{word}' 提供基本释义，不超过20个字。",
+            "is_default": true
+        },
+        "word_definition_3": {
+            "name": "西语老师",
+            "template": "<Role> Spanish Teacher\n<Goal> Help users understand the meaning of {word} in context.\n<Instructions>\n1. Be brief and concise.\n2. USE HTML TO DESIGN THE LAYOUT FOR YOUR RESULTS\n3. Provide the explanation in simple Spanish that is easy to understand.\n4. Use emoji to aid understanding.",
+            "is_default": false
+        },
+        "word_definition_1": {
+            "name": "英语老师",
+            "template": "<角色> 英语老师\n<目标> 帮助用户理解{word}在上下文中的含义。\n<说明\n1. 简明扼要。\n2. 使用HTML进行换行。\n3. 使用emoji帮助理解。",
+            "is_default": false
+        },
+        "word_definition_2": {
+            "name": "测试",
+            "template": "告诉我你接收到了多少个句子。",
+            "is_default": false
+        }
+    }
+}
