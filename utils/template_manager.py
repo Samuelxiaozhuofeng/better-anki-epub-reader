@@ -2,11 +2,13 @@ from typing import Dict, Optional
 import json
 import os
 
+from .paths import templates_path
+
 class TemplateManager:
     def __init__(self, template_file: str = "templates.json"):
         """初始化模板管理器"""
         # 使用统一的配置文件
-        self.config_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config", "templates.json")
+        self.config_file = templates_path()
         
         # 默认模板
         self.default_templates = {

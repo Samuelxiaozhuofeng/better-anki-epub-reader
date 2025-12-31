@@ -60,3 +60,10 @@ The system SHALL preserve existing reader workflows (open content, navigate chap
 - **WHEN** the user looks up a word and clicks “add to Anki”
 - **THEN** a note is created using the configured deck/model/field mapping as before
 
+### Requirement: Shared UI tokens remain consistent
+The system SHALL define reader UI theme tokens and base dialog styling in a single shared source of truth so that the reader window and related dialogs remain visually consistent.
+
+#### Scenario: Open reader and dialogs
+- **WHEN** the user opens the reader window and any related settings dialog
+- **THEN** the surfaces use the same base styling and compatible theme palette (no diverging “near-duplicate” definitions)
+

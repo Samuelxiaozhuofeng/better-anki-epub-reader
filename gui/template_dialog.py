@@ -1,19 +1,11 @@
 from aqt.qt import *
 from ..utils.template_manager import TemplateManager
+from .dialog_styles import COMMON_DIALOG_QSS
 
-DIALOG_QSS = """
-    QDialog {
-        background-color: #FFFFFF;
-    }
-    QLabel {
-        color: #1D1D1F;
-        font-family: "SF Pro Text", "-apple-system", "PingFang SC", "Microsoft YaHei";
-    }
+DIALOG_QSS = (
+    COMMON_DIALOG_QSS
+    + """
     QLineEdit, QTextEdit {
-        background-color: #FFFFFF;
-        border: 1px solid #D2D2D7;
-        border-radius: 8px;
-        padding: 6px 10px;
         font-family: "SF Pro Text", "-apple-system", "PingFang SC", "Microsoft YaHei";
     }
     QListWidget {
@@ -22,31 +14,10 @@ DIALOG_QSS = """
         padding: 6px;
     }
     QPushButton {
-        background-color: #FFFFFF;
-        color: #1D1D1F;
-        border: 1px solid #D2D2D7;
-        border-radius: 8px;
-        padding: 6px 12px;
         font-family: "SF Pro Text", "-apple-system", "PingFang SC", "Microsoft YaHei";
     }
-    QPushButton:hover {
-        background-color: #F5F5F7;
-    }
-    QPushButton:pressed {
-        background-color: #E5E5EA;
-    }
-    QPushButton[primary="true"] {
-        background-color: #007AFF;
-        color: #FFFFFF;
-        border: none;
-    }
-    QPushButton[primary="true"]:hover {
-        background-color: #0066D6;
-    }
-    QPushButton[primary="true"]:pressed {
-        background-color: #0051A8;
-    }
 """
+)
 
 class TemplateDialog(QDialog):
     def __init__(self, parent=None):

@@ -5,10 +5,12 @@ from aqt.qt import QMessageBox
 import os
 import json
 
+from .paths import note_config_path
+
 class AnkiHandler:
     def __init__(self):
         self.collection = mw.col
-        self.config_path = os.path.join(mw.pm.addonFolder(), "anki_reader", "config", "note_config.json")
+        self.config_path = note_config_path()
     
     def get_note_config(self) -> Dict[str, Any]:
         """获取笔记配置"""

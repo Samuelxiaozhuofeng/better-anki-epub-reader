@@ -3,8 +3,7 @@ from aqt import mw
 from anki.notes import Note
 import json
 import os
-import asyncio
-from PyQt6.QtCore import pyqtSignal, QTimer, Qt, QSettings
+from PyQt6.QtCore import QTimer, Qt, QSettings
 from PyQt6.QtWidgets import QSplitter
 from ..utils.ai_factory import AIFactory
 from ..utils.ai_client import AIClient, AIResponse
@@ -15,139 +14,13 @@ from ..utils.anki_handler import AnkiHandler
 from ..utils.image_handler import ImageHandler
 from .note_settings_dialog import NoteSettingsDialog
 from .template_dialog import TemplateDialog
-from .settings_dialog import AIServiceSettingsDialog, ContextSettingsDialog, CONFIG_PATH
+from .settings_dialog import AIServiceSettingsDialog, ContextSettingsDialog
 from .ui_reader_window import Ui_ReaderWindow
-from ..utils.text_utils import TextContextExtractor
-
-def run_async(coro):
-    """运行异步函数"""
-    try:
-        # 尝试获取已存在的事件循环
-        loop = asyncio.get_event_loop()
-    except RuntimeError:
-        # 如果没有事件循环，创建一个新的
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-    
-    try:
-        # 运行协程
-        return loop.run_until_complete(coro)
-    except Exception as e:
-        print(f"Async operation failed: {str(e)}")
-        raise
-
-class WordClickableTextEdit(QTextEdit):
-    """支持单词点击的文本编辑器"""
-    wordClicked = pyqtSignal(str, str)  # 单词和上下文
-    
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setMouseTracking(True)
-        self.viewport().setCursor(Qt.CursorShape.IBeamCursor)
-        self.context_extractor = TextContextExtractor()
-        self.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.customContextMenuRequested.connect(self.show_context_menu)
-        
-        # 添加选择模式标志
-        self.selecting_text = False
-        self.last_click_pos = None
-        self.click_timer = QTimer()
-        self.click_timer.setSingleShot(True)
-        self.click_timer.timeout.connect(self.handle_click)
-    
-    def mousePressEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            # 记录点击位置
-            self.last_click_pos = event.pos()
-            # 启动定时器以区分点击和拖动选择
-            self.click_timer.start(200)  # 200ms延迟
-            self.selecting_text = False
-        super().mousePressEvent(event)
-    
-    def mouseReleaseEvent(self, event):
-        if event.button() == Qt.MouseButton.LeftButton:
-            # 如果正在选择文本不触发查词
-            if self.selecting_text:
-                self.click_timer.stop()
-        super().mouseReleaseEvent(event)
-    
-    def mouseMoveEvent(self, event):
-        # 如果鼠标移动超过阈值，标记为正在选择文本
-        if self.last_click_pos and (event.pos() - self.last_click_pos).manhattanLength() > 5:
-            self.selecting_text = True
-            self.click_timer.stop()
-        
-        # 处理鼠标悬停
-        cursor = self.cursorForPosition(event.pos())
-        cursor.select(QTextCursor.SelectionType.WordUnderCursor)
-        if cursor.selectedText().strip():
-            self.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
-        else:
-            self.viewport().setCursor(Qt.CursorShape.IBeamCursor)
-        
-        super().mouseMoveEvent(event)
-    
-    def handle_click(self):
-        """处理单击事件"""
-        if not self.selecting_text and self.last_click_pos:
-            cursor = self.cursorForPosition(self.last_click_pos)
-            cursor.select(QTextCursor.SelectionType.WordUnderCursor)
-            word = cursor.selectedText().strip()
-            if word:
-                # 获取AI上下文并发送信号
-                context = self.lookup_word(word, cursor.position(), for_ai=True)
-                self.wordClicked.emit(word, context)
-        
-        self.last_click_pos = None
-        self.selecting_text = False
-    
-    def show_context_menu(self, position):
-        menu = self.createStandardContextMenu()
-        
-        # 获取选中的文本
-        cursor = self.textCursor()
-        selected_text = cursor.selectedText().strip()
-        
-        if selected_text:
-            # 在菜单顶部添加查词选项
-            lookup_action = menu.addAction("查词")
-            menu.insertAction(menu.actions()[0], lookup_action)  # 插入到第一个位置
-            menu.insertSeparator(menu.actions()[1])  # 添加分隔符
-            
-            # 连接查词动作
-            lookup_action.triggered.connect(lambda: self.lookup_and_emit(selected_text, cursor.position()))
-        
-        # 显示菜单
-        menu.exec(self.viewport().mapToGlobal(position))
-    
-    def lookup_and_emit(self, word: str, cursor_pos: int):
-        """查词并发送信号"""
-        context = self.lookup_word(word, cursor_pos, for_ai=True)
-        self.wordClicked.emit(word, context)
-    
-    def lookup_word(self, word: str, cursor_pos: int, for_ai: bool = True):
-        """处理查词请求
-        
-        Args:
-            word: 选中的单词
-            cursor_pos: 光标位置
-            for_ai: 是否是发送给AI的场景（True）还是添加到Anki的场景（False）
-            
-        Returns:
-            str: 上下文文本
-        """
-        # 从配置中获取上下文设置
-        include_adjacent = True
-        if os.path.exists(CONFIG_PATH):
-            with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
-                config = json.load(f)
-                context_type = config.get("ai_context_type" if for_ai else "anki_context_type", "Current Sentence Only")
-                include_adjacent = context_type == "Current Sentence with Adjacent (1 Sentence)"
-        
-        # 获取上下文
-        text = self.toPlainText()
-        context = self.context_extractor.get_context(text, cursor_pos, include_adjacent)
-        return context
+from .word_clickable_text_edit import WordClickableTextEdit
+from .epub_manager_dialog import EPUBManagerDialog
+from .reader_theme import get_reader_palette, word_label_font_size, word_label_font_size_compact
+from ..utils.async_utils import run_async
+from ..utils.paths import config_json_path, config_dir, reader_style_path
 
 class ReaderWindow(QMainWindow):
     def __init__(self, parent=None):
@@ -159,7 +32,7 @@ class ReaderWindow(QMainWindow):
         
         # 初始化模板管理器和加载上次使用的模板ID
         self.template_manager = TemplateManager()
-        self.current_template_id = self.template_manager._load_current_template_id()
+        self.current_template_id = self.template_manager.current_template_id
         
         # 替换普通QTextEdit为WordClickableTextEdit
         self.reader_container = self.ui.reader_container
@@ -184,7 +57,6 @@ class ReaderWindow(QMainWindow):
         
         # 初始化处理器
         self.anki_handler = AnkiHandler()
-        self.template_manager = TemplateManager()
         self.ai_client = None
         self.epub_handler = EPUBHandler()
         self.db_handler = DBHandler()
@@ -357,9 +229,9 @@ class ReaderWindow(QMainWindow):
     def load_ai_client(self):
         """加载AI客户端"""
         try:
-            config_path = os.path.join(mw.pm.addonFolder(), "anki_reader", "config.json")
-            if os.path.exists(config_path):
-                with open(config_path, 'r', encoding='utf-8') as f:
+            path = config_json_path()
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as f:
                     config = json.load(f)
                     service_type = config["service_type"].lower().replace(" ", "")
                     if service_type == "openai":
@@ -383,30 +255,13 @@ class ReaderWindow(QMainWindow):
             self.current_word = word
             self.current_context = context
             self.ui.addToAnkiButton.setEnabled(False)
-            
-            # 根据单词长度设置字体大小
-            word_length = len(word.split())
-            if word_length <= 3:  # 短词组
-                font_size = 28
-            elif word_length <= 6:  # 中等长度
-                font_size = 24
-            elif word_length <= 10:  # 较长词组
-                font_size = 20
-            else:  # 很长的词组
-                font_size = 16
-                
-            # 获取当前主题颜色
-            theme_colors = {
-                "Default": ("#FFFFFF", "#1D1D1F", "#CFE4FF"),
-                "Eye Care": ("#F6F5F1", "#1D1D1F", "#E8E7E3"),
-                "Dark": ("#1C1C1E", "#E5E5E7", "#3A3A3C"),
-                "Brown": ("#FAF6F1", "#2C2C2E", "#EFE6D8")
-            }
-            current_theme = self._get_theme_id()
-            bg_color, text_color, _ = theme_colors.get(current_theme, ("#FFFFFF", "#000000", "#F7F7F7"))
-            is_dark = current_theme == "Dark"
-            card_bg = "#3A3A3C" if is_dark else "#FFFFFF"
-            border_color = "#3A3A3C" if is_dark else "#E5E5EA"
+
+            font_size = word_label_font_size(word)
+
+            palette = get_reader_palette(self._get_theme_id())
+            text_color = palette["text_color"]
+            card_bg = palette["card_bg"]
+            border_color = palette["border_color"]
             
             # 设置字体大小和主题颜色
             self.ui.wordLabel.setStyleSheet(f"""
@@ -498,22 +353,15 @@ class ReaderWindow(QMainWindow):
     
     def update_text_style(self):
         """更新本样式"""
-        # 获取主颜色
-        theme_colors = {
-            "Default": ("#FFFFFF", "#1D1D1F", "#CFE4FF"),
-            "Eye Care": ("#F6F5F1", "#1D1D1F", "#E8E7E3"),
-            "Dark": ("#1C1C1E", "#E5E5E7", "#3A3A3C"),
-            "Brown": ("#FAF6F1", "#2C2C2E", "#EFE6D8")
-        }
-        
-        current_theme = self._get_theme_id()
-        bg_color, text_color, selection_color = theme_colors.get(current_theme, ("#FFFFFF", "#000000", "#F7F7F7"))
-        is_dark = current_theme == "Dark"
-        panel_bg = "#2C2C2E" if is_dark else "#F5F5F7"
-        card_bg = "#3A3A3C" if is_dark else "#FFFFFF"
-        border_color = "#3A3A3C" if is_dark else "#E5E5EA"
-        control_bg = "#3A3A3C" if is_dark else "#FFFFFF"
-        control_hover_bg = "#48484A" if is_dark else "#F5F5F7"
+        palette = get_reader_palette(self._get_theme_id())
+        bg_color = palette["bg_color"]
+        text_color = palette["text_color"]
+        selection_color = palette["selection_color"]
+        panel_bg = palette["panel_bg"]
+        card_bg = palette["card_bg"]
+        border_color = palette["border_color"]
+        control_bg = palette["control_bg"]
+        control_hover_bg = palette["control_hover_bg"]
         
         # 应用主题样式到整个阅读器界面
         self.reader_container.setStyleSheet(f"""
@@ -591,15 +439,7 @@ class ReaderWindow(QMainWindow):
 
         label_text = self.current_word or "点击单词或选中文本查词"
         if self.current_word:
-            word_length = len(self.current_word.split())
-            if word_length <= 3:
-                label_font_size = 24
-            elif word_length <= 6:
-                label_font_size = 20
-            elif word_length <= 10:
-                label_font_size = 18
-            else:
-                label_font_size = 16
+            label_font_size = word_label_font_size_compact(self.current_word)
         else:
             label_font_size = 14
 
@@ -800,12 +640,11 @@ class ReaderWindow(QMainWindow):
                 "text_align": self.align_combo.currentData() or "left",
                 "theme": self._get_theme_id()
             }
-            
-            config_dir = os.path.join(mw.pm.addonFolder(), "anki_reader", "config")
-            os.makedirs(config_dir, exist_ok=True)
-            config_path = os.path.join(config_dir, "reader_style.json")
-            
-            with open(config_path, 'w', encoding='utf-8') as f:
+
+            os.makedirs(config_dir(), exist_ok=True)
+            path = reader_style_path()
+
+            with open(path, "w", encoding="utf-8") as f:
                 json.dump(config, f, indent=4, ensure_ascii=False)
                 
         except Exception as e:
@@ -814,9 +653,9 @@ class ReaderWindow(QMainWindow):
     def load_style_settings(self):
         """加载样式设置"""
         try:
-            config_path = os.path.join(mw.pm.addonFolder(), "anki_reader", "config", "reader_style.json")
-            if os.path.exists(config_path):
-                with open(config_path, 'r', encoding='utf-8') as f:
+            path = reader_style_path()
+            if os.path.exists(path):
+                with open(path, "r", encoding="utf-8") as f:
                     config = json.load(f)
                     
                     # 设置字体大小
@@ -838,7 +677,7 @@ class ReaderWindow(QMainWindow):
                     self.update_text_style()
                     
         except Exception as e:
-            print(f"���载样式设置失败: {str(e)}")
+            print(f"加载样式设置失败: {str(e)}")
 
     def _set_align_from_config(self, value: str) -> None:
         value = (value or "").strip()
@@ -1184,192 +1023,3 @@ class ReaderWindow(QMainWindow):
         self.current_images = []
         self.current_image_index = 0
         self.update_image_navigation()
-
-
-class EPUBManagerDialog(QDialog):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.parent = parent
-        self.db_handler = parent.db_handler
-        self.setup_ui()
-        self.load_books()
-        
-    def setup_ui(self):
-        """设置UI"""
-        self.setWindowTitle("书籍管理")
-        self.setMinimumWidth(800)
-        self.setMinimumHeight(500)
-        
-        # 创建主布局
-        layout = QVBoxLayout()
-        
-        # 创建表格
-        self.table = QTableWidget()
-        self.table.setColumnCount(7)  # 增加了章节数和阅读进度列
-        self.table.setHorizontalHeaderLabels(["书名", "作者", "语言", "章节", "进度", "添加时间", "操作"])
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.ResizeToContents)
-        self.table.horizontalHeader().setSectionResizeMode(6, QHeaderView.ResizeMode.ResizeToContents)
-        
-        # 允选择整行
-        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.table.setSelectionMode(QTableWidget.SelectionMode.SingleSelection)
-        
-        layout.addWidget(self.table)
-        
-        # 创建按钮布局
-        button_layout = QHBoxLayout()
-        
-        # 添加打开按钮
-        self.open_btn = QPushButton("打开选中的书籍")
-        self.open_btn.clicked.connect(self.open_selected_book)
-        button_layout.addWidget(self.open_btn)
-        
-        # 添加导入按钮
-        self.import_btn = QPushButton("导入新书")
-        self.import_btn.clicked.connect(self.import_new_book)
-        button_layout.addWidget(self.import_btn)
-        
-        button_layout.addStretch()
-        
-        # 添加关闭按钮
-        close_btn = QPushButton("关闭")
-        close_btn.clicked.connect(self.accept)
-        button_layout.addWidget(close_btn)
-        
-        layout.addLayout(button_layout)
-        self.setLayout(layout)
-        
-    def load_books(self):
-        """加载书籍列表"""
-        books = self.db_handler.get_book_list()
-        self.table.setRowCount(len(books))
-        
-        for row, book in enumerate(books):
-            # 标题
-            title_item = QTableWidgetItem(book[1])
-            title_item.setData(Qt.ItemDataRole.UserRole, book[0])  # 存储书籍ID
-            self.table.setItem(row, 0, title_item)
-            
-            # 作者
-            self.table.setItem(row, 1, QTableWidgetItem(book[2] or "未知"))
-            
-            # 语言
-            self.table.setItem(row, 2, QTableWidgetItem(book[4] or "未知"))
-            
-            # 获取章节数
-            chapters = self.db_handler.get_chapter_list(book[0])
-            chapter_count = len(chapters)
-            self.table.setItem(row, 3, QTableWidgetItem(str(chapter_count)))
-            
-            # 获取阅读进度
-            progress = self.db_handler.get_book_progress(book[0])
-            if progress:
-                progress_text = f"{progress['chapter_index'] + 1}/{chapter_count}"
-            else:
-                progress_text = "未开始"
-            self.table.setItem(row, 4, QTableWidgetItem(progress_text))
-            
-            # 添加时间
-            self.table.setItem(row, 5, QTableWidgetItem(str(book[5])))
-            
-            # 操作按钮
-            btn_widget = QWidget()
-            btn_layout = QHBoxLayout(btn_widget)
-            btn_layout.setContentsMargins(2, 2, 2, 2)
-            
-            # 删除按钮
-            delete_btn = QPushButton("删除")
-            delete_btn.clicked.connect(lambda checked, book_id=book[0]: self.delete_book(book_id))
-            btn_layout.addWidget(delete_btn)
-            
-            self.table.setCellWidget(row, 6, btn_widget)
-    
-    def open_selected_book(self):
-        """打开选中的书籍"""
-        selected_items = self.table.selectedItems()
-        if not selected_items:
-            QMessageBox.warning(self, "提示", "请先选择一本书。")
-            return
-            
-        book_id = self.table.item(selected_items[0].row(), 0).data(Qt.ItemDataRole.UserRole)
-        if book_id:
-            try:
-                print(f"正在打开书籍ID: {book_id}")
-                # 获取阅读进度
-                progress = self.db_handler.get_book_progress(book_id)
-                print(f"获取到阅读进度: {progress}")
-                
-                # 设置父窗口的当前书籍
-                self.parent.current_book_id = book_id
-                
-                # 先刷新章节列表
-                print("刷新章节列表")
-                self.parent.refresh_chapter_list(book_id)
-                
-                # 设置章节索引
-                if progress:
-                    self.parent.current_chapter_index = progress['chapter_index']
-                    print(f"设置章节索引为: {progress['chapter_index']}")
-                else:
-                    self.parent.current_chapter_index = 0
-                    print("未找到阅读进度，从第一章开始")
-                
-                # 确保章节索引在有效范围内
-                chapter_count = self.parent.ui.chapter_combo.count()
-                if self.parent.current_chapter_index >= chapter_count:
-                    print(f"章节索引 {self.parent.current_chapter_index} 超范围，重置为0")
-                    self.parent.current_chapter_index = 0
-                
-                # 设置当前章节
-                print(f"设置当前章节索引: {self.parent.current_chapter_index}")
-                self.parent.ui.chapter_combo.blockSignals(True)  # 暂时阻止信号触发
-                self.parent.ui.chapter_combo.setCurrentIndex(self.parent.current_chapter_index)
-                self.parent.ui.chapter_combo.blockSignals(False)  # 恢复信号
-                
-                # 加载章节内容
-                print("开始加载章节内容")
-                self.parent.load_chapter()
-                
-                self.accept()
-                
-            except Exception as e:
-                print(f"打开书时出错: {str(e)}")
-                QMessageBox.critical(self, "错误", f"打开书籍失败：{str(e)}")
-    
-    def import_new_book(self):
-        """导入新图书"""
-        file_name, _ = QFileDialog.getOpenFileName(
-            self,
-            "选择EPUB文件",
-            "",
-            "EPUB Files (*.epub)"
-        )
-        if file_name:
-            self.parent.open_epub(file_name)
-            self.load_books()  # 重新加载书籍列表
-            
-    def delete_book(self, book_id: int):
-        """删除书籍"""
-        reply = QMessageBox.question(
-            self,
-            "确认删除",
-            "确定要删除这本书吗？",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            QMessageBox.StandardButton.No
-        )
-        
-        if reply == QMessageBox.StandardButton.Yes:
-            if self.db_handler.delete_book(book_id):
-                self.load_books()  # 重新加载书籍列表
-                
-                # 如果删除的是当前打开的书籍，清空示
-                if self.parent.current_book_id == book_id:
-                    self.parent.current_book_id = None
-                    self.parent.current_chapter_index = 0
-                    self.parent.textEdit.clear()
-                    self.parent.ui.chapter_combo.clear()

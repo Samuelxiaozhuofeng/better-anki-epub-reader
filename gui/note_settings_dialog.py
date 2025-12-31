@@ -2,51 +2,16 @@ from aqt.qt import *
 from ..utils.anki_handler import AnkiHandler
 import json
 import os
-from aqt import mw
+from ..utils.paths import note_config_path
+from .dialog_styles import COMMON_DIALOG_QSS
 
-DIALOG_QSS = """
-    QDialog { background-color: #FFFFFF; }
-    QLabel {
-        color: #1D1D1F;
-        font-family: "SF Pro Text", "-apple-system", "PingFang SC", "Microsoft YaHei";
-    }
-    QGroupBox {
-        border: 1px solid #E5E5EA;
-        border-radius: 10px;
-        margin-top: 12px;
-        padding: 10px;
-        font-family: "SF Pro Text", "-apple-system", "PingFang SC", "Microsoft YaHei";
-    }
-    QGroupBox::title {
-        subcontrol-origin: margin;
-        left: 12px;
-        padding: 0 6px;
-        color: #1D1D1F;
-        font-weight: 600;
-    }
-    QLineEdit, QComboBox {
-        background-color: #FFFFFF;
-        border: 1px solid #D2D2D7;
-        border-radius: 8px;
-        padding: 6px 10px;
-        min-width: 180px;
-    }
-    QPushButton {
-        background-color: #FFFFFF;
-        color: #1D1D1F;
-        border: 1px solid #D2D2D7;
-        border-radius: 8px;
-        padding: 6px 12px;
-    }
-    QPushButton:hover { background-color: #F5F5F7; }
-    QPushButton:pressed { background-color: #E5E5EA; }
-"""
+DIALOG_QSS = COMMON_DIALOG_QSS
 
 class NoteSettingsDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.anki_handler = AnkiHandler()
-        self.config_path = os.path.join(mw.pm.addonFolder(), "anki_reader", "config", "note_config.json")
+        self.config_path = note_config_path()
         self.setStyleSheet(DIALOG_QSS)
         self.setup_ui()
         self.load_settings()
