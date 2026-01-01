@@ -5,6 +5,8 @@ from aqt import mw
 from aqt.utils import showInfo, showWarning
 import atexit
 
+from .utils.vendor_path import vendored_sys_path
+
 
 def _patch_ankimorphs_settings_dialog_close() -> None:
     """Avoid Anki shutdown being blocked by AnkiMorphs settings dialog init race.
@@ -69,14 +71,15 @@ if hasattr(Qt, 'AA_EnableHighDpiScaling'):  # 对于Qt5
 elif hasattr(Qt.ApplicationAttribute, 'AA_UseHighDpiPixmaps'):  # 对于Qt6
     QApplication.setAttribute(Qt.ApplicationAttribute.AA_UseHighDpiPixmaps)
 
-# 添加vendor目录到Python路径
-vendor_dir = os.path.join(os.path.dirname(__file__), 'vendor')
-sys.path.insert(0, vendor_dir)
-
 try:
     # 导入事件循环处理模块
-    from .event_loop_handler import cleanup_proactor_event_loop, setup_event_loop_policy, handle_event_loop_exception
-    import asyncio
+    with vendored_sys_path():
+        from .event_loop_handler import (
+            cleanup_proactor_event_loop,
+            setup_event_loop_policy,
+            handle_event_loop_exception,
+        )
+        import asyncio
     
     # 设置事件循环策略
     setup_event_loop_policy()
@@ -88,9 +91,10 @@ try:
     loop = asyncio.get_event_loop()
     loop.set_exception_handler(handle_event_loop_exception)
     
-    # 导入其他模块
-    from .gui.reader_window import ReaderWindow
-    from aqt import gui_hooks
+    # 导入其他模块（这些模块可能依赖 vendor/ 内的第三方包）
+    with vendored_sys_path():
+        from .gui.reader_window import ReaderWindow
+        from aqt import gui_hooks
 
     # Ensure Anki can close even if AnkiMorphs settings dialog is mid-initialization.
     gui_hooks.profile_will_close.append(_patch_ankimorphs_settings_dialog_close)

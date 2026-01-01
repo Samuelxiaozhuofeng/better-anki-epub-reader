@@ -3,8 +3,12 @@ import sys
 from typing import Dict, List, Optional
 import zipfile
 import xml.etree.ElementTree as ET
-from bs4 import BeautifulSoup
 from aqt import mw
+
+from .vendor_path import vendored_sys_path
+
+with vendored_sys_path():
+    from bs4 import BeautifulSoup
 
 class EPUBHandler:
     def __init__(self):

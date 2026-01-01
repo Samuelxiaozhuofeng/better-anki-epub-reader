@@ -1,14 +1,10 @@
 import json
-from typing import Dict, Any, Optional
-import sys
-import os
+from typing import Any, Dict, Optional
 
-# 添加vendor目录到Python路径
-vendor_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "vendor")
-if vendor_dir not in sys.path:
-    sys.path.insert(0, vendor_dir)
+from .vendor_path import vendored_sys_path
 
-import aiohttp
+with vendored_sys_path():
+    import aiohttp
 from .ai_client import AIClient, AIResponse
 
 class OpenAIClient(AIClient):

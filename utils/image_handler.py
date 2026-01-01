@@ -1,7 +1,5 @@
-import aiohttp
 import asyncio
 import requests
-from bs4 import BeautifulSoup
 from PyQt6.QtCore import QThread, pyqtSignal, Qt
 from PyQt6.QtGui import QPixmap
 import tempfile
@@ -13,6 +11,12 @@ import urllib.parse
 import json
 import html
 import re
+
+from .vendor_path import vendored_sys_path
+
+with vendored_sys_path():
+    import aiohttp
+    from bs4 import BeautifulSoup
 
 try:
     import aiofiles

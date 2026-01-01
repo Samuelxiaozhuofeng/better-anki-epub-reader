@@ -5,7 +5,10 @@ import json
 from dataclasses import dataclass
 from typing import Any, AsyncIterator, Callable, Dict, Optional
 
-import aiohttp
+from .vendor_path import vendored_sys_path
+
+with vendored_sys_path():
+    import aiohttp
 
 @dataclass
 class AIResponse:

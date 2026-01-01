@@ -1,6 +1,10 @@
 import json
 from typing import Dict, Any
-import aiohttp
+
+from .vendor_path import vendored_sys_path
+
+with vendored_sys_path():
+    import aiohttp
 from .ai_client import AIClient, AIResponse
 
 class CustomAIClient(AIClient):
