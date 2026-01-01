@@ -99,6 +99,17 @@ class DBHandler:
             mw.col.db.execute("ROLLBACK")
             showWarning(f"添加书籍失败: {str(e)}")
             return None
+
+    def get_book_id_by_path(self, file_path: str) -> Optional[int]:
+        """根据文件路径获取书籍ID"""
+        try:
+            return mw.col.db.scalar(
+                "SELECT id FROM epub_books WHERE file_path = ?",
+                file_path,
+            )
+        except Exception as e:
+            showWarning(f"获取书籍ID失败: {str(e)}")
+            return None
             
     def add_chapters(self, book_id: int, chapters: List[Dict]) -> bool:
         """添加章节
@@ -117,12 +128,6 @@ class DBHandler:
             # 先删除已存在的章节
             mw.col.db.execute(
                 "DELETE FROM epub_chapters WHERE book_id = ?",
-                book_id
-            )
-            
-            # 删除相关的书签
-            mw.col.db.execute(
-                "DELETE FROM epub_bookmarks WHERE book_id = ?",
                 book_id
             )
             
@@ -161,17 +166,29 @@ class DBHandler:
             bool: 是否成功
         """
         try:
+            # 该表目前未定义唯一约束，直接 INSERT 会导致多条记录堆积。
+            # 这里保持“每本书仅保存一条最后进度”的语义。
+            mw.col.db.execute("BEGIN")
+            mw.col.db.execute(
+                "DELETE FROM epub_bookmarks WHERE book_id = ?",
+                book_id,
+            )
             mw.col.db.execute(
                 """
-                INSERT OR REPLACE INTO epub_bookmarks (book_id, chapter_index, position)
+                INSERT INTO epub_bookmarks (book_id, chapter_index, position)
                 VALUES (?, ?, ?)
                 """,
                 book_id,
                 chapter_index,
-                position
+                position,
             )
+            mw.col.db.execute("COMMIT")
             return True
         except Exception as e:
+            try:
+                mw.col.db.execute("ROLLBACK")
+            except Exception:
+                pass
             showWarning(f"更新阅读进度失败: {str(e)}")
             return False
             

@@ -56,6 +56,11 @@ class ReaderWindow(QMainWindow):
         self.current_meaning = None
 
         self._ui_settings = QSettings()
+        self._progress_save_timer = QTimer(self)
+        self._progress_save_timer.setSingleShot(True)
+        self._progress_save_timer.setInterval(800)
+        self._progress_save_timer.timeout.connect(self.save_current_position)
+        self._suppress_progress_save = False
         
         # 初始化图片相关变量
         self.current_images = []
@@ -97,6 +102,9 @@ class ReaderWindow(QMainWindow):
         self.setWindowTitle("阅读器")
         
         # 不强制设置窗口大小；由 UI 默认值或持久化状态决定
+
+        # 默认弹出书籍管理，便于继续阅读
+        QTimer.singleShot(0, self.show_epub_manager)
 
     def create_actions(self):
         """创建动作"""
@@ -236,6 +244,16 @@ class ReaderWindow(QMainWindow):
         self.ui.prev_chapter_btn.clicked.connect(self.on_prev_chapter)
         self.ui.next_chapter_btn.clicked.connect(self.on_next_chapter)
         self.ui.chapter_combo.currentIndexChanged.connect(self.on_chapter_changed)
+
+        # 滚动阅读时自动保存进度（防抖）
+        self.textEdit.verticalScrollBar().valueChanged.connect(self._on_reader_scrolled)
+
+    def _on_reader_scrolled(self, value: int) -> None:
+        if self._suppress_progress_save:
+            return
+        if not self.current_book_id:
+            return
+        self._progress_save_timer.start()
     
     def load_ai_client(self):
         """加载AI客户端"""
@@ -879,6 +897,7 @@ class ReaderWindow(QMainWindow):
 
     def closeEvent(self, event):
         self._cancel_active_lookup()
+        self.save_current_position()
         self._save_ui_state()
         super().closeEvent(event)
 
@@ -903,6 +922,23 @@ class ReaderWindow(QMainWindow):
     def open_epub(self, file_path: str):
         """打开EPUB文件"""
         try:
+            existing_book_id = self.db_handler.get_book_id_by_path(file_path)
+            if existing_book_id:
+                self.current_book_id = existing_book_id
+
+                progress = self.db_handler.get_book_progress(existing_book_id)
+                if progress:
+                    self.current_chapter_index = progress["chapter_index"]
+                else:
+                    self.current_chapter_index = 0
+
+                self.refresh_chapter_list(existing_book_id)
+                self.ui.chapter_combo.blockSignals(True)
+                self.ui.chapter_combo.setCurrentIndex(self.current_chapter_index)
+                self.ui.chapter_combo.blockSignals(False)
+                self.load_chapter()
+                return
+
             # 加载EPUB
             if not self.epub_handler.load_book(file_path):
                 raise Exception("无法加载EPUB文件")
@@ -914,8 +950,8 @@ class ReaderWindow(QMainWindow):
             book_id = self.db_handler.add_book(metadata, file_path)
             if not book_id:
                 raise Exception("无法保存书籍信息")
-                
-            # 保存章节
+
+            # 保存章节（首次导入）
             if not self.db_handler.add_chapters(book_id, self.epub_handler.chapters):
                 raise Exception("无法保存章节信息")
                 
@@ -931,7 +967,9 @@ class ReaderWindow(QMainWindow):
             
             # 刷新章��列表
             self.refresh_chapter_list(book_id)
+            self.ui.chapter_combo.blockSignals(True)
             self.ui.chapter_combo.setCurrentIndex(self.current_chapter_index)
+            self.ui.chapter_combo.blockSignals(False)
             
             # 加载章节
             self.load_chapter()
@@ -981,6 +1019,7 @@ class ReaderWindow(QMainWindow):
         
         if content:
             print(f"成功获取章节内容，长度: {len(content)}")
+            self._suppress_progress_save = True
             # 使用当前样式设置应用内容
             self.update_text_style()
             
@@ -992,12 +1031,7 @@ class ReaderWindow(QMainWindow):
                 QTimer.singleShot(500, lambda pos=progress['position']: self._restore_position(pos))
             else:
                 print("未找到当前章节的阅读进度，从头开始阅读")
-                # 更新阅读进度，从头开始
-                self.db_handler.update_bookmark(
-                    self.current_book_id,
-                    self.current_chapter_index,
-                    0
-                )
+                QTimer.singleShot(0, self._clear_suppress_progress_save)
         else:
             print("未获取到章节内容")
             self.textEdit.setPlainText("无法加载章节内容")
@@ -1008,8 +1042,13 @@ class ReaderWindow(QMainWindow):
         scrollbar = self.textEdit.verticalScrollBar()
         current_pos = scrollbar.value()
         print(f"当前位置: {current_pos}, 目��位置: {position}")
+        self._suppress_progress_save = True
         scrollbar.setValue(position)
+        QTimer.singleShot(0, self._clear_suppress_progress_save)
         print(f"设置后的位置: {scrollbar.value()}")
+
+    def _clear_suppress_progress_save(self) -> None:
+        self._suppress_progress_save = False
     
     def get_current_text_align(self):
         """取前文本对齐方式"""
