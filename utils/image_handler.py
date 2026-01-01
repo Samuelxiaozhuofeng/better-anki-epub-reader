@@ -11,6 +11,8 @@ from functools import lru_cache
 from threading import Lock
 import urllib.parse
 import json
+import html
+import re
 
 try:
     import aiofiles
@@ -40,7 +42,10 @@ class ImageSearchThread(QThread):
         self.word = word
         self.max_images = max_images
         self.headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+            "Referer": "https://www.bing.com/",
         }
         self._loop = None
         self._session = None
@@ -80,14 +85,19 @@ class ImageSearchThread(QThread):
             # 使用已存在的session
             async with self._session.get(image_url, timeout=10) as response:
                 if response.status == 200:
+                    content_type = (response.headers.get("Content-Type") or "").lower()
+                    if content_type and not content_type.startswith("image/"):
+                        return None
                     content = await response.read()
+                    if not content or len(content) < 128:
+                        return None
                     
                     # 使用URL的最后部分作为文件名
                     url_path = urllib.parse.urlparse(image_url).path
                     file_name = os.path.basename(url_path)
                     if not file_name:
                         file_name = 'image.jpg'
-                    elif not file_name.endswith(('.jpg', '.jpeg', '.png')):
+                    elif not file_name.lower().endswith(('.jpg', '.jpeg', '.png', '.webp', '.gif')):
                         file_name += '.jpg'
                         
                     # 创建临时文件
@@ -119,6 +129,13 @@ class ImageSearchThread(QThread):
 
     async def fetch_image_urls(self):
         """异步获取图片URL列表"""
+        # Prefer stable JSON sources first (Wikimedia/Wikipedia). Fall back to Bing HTML only if needed.
+        wikimedia_urls = await self.fetch_wikimedia_image_urls()
+        if wikimedia_urls:
+            with self._cache_lock:
+                self._url_cache[self.word] = (time.time(), wikimedia_urls[: self.max_images])
+            return wikimedia_urls[:self.max_images]
+
         search_url = f"https://www.bing.com/images/search?q={urllib.parse.quote(self.word)}&first=1"
         
         try:
@@ -128,23 +145,48 @@ class ImageSearchThread(QThread):
                     
                 html = await response.text()
                 soup = BeautifulSoup(html, BS4_PARSER)  # 使用可用的最佳解析器
-                image_elements = soup.find_all('a', class_='iusc')
+
                 image_urls = []
-                
+
+                # Strategy 1: parse anchors with embedded JSON metadata (legacy Bing layout)
+                image_elements = soup.find_all("a", class_="iusc")
                 for element in image_elements:
-                    if len(image_urls) >= self.max_images:
-                        break
-                        
-                    if element and 'm' in element.attrs:
+                    if element and "m" in element.attrs:
                         try:
-                            image_data = json.loads(element['m'])  # 使用json.loads替代eval
-                            image_urls.append(image_data['murl'])
+                            raw = html.unescape(element["m"])
+                            image_data = json.loads(raw)
+                            url = image_data.get("murl")
+                            if isinstance(url, str) and url.startswith(("http://", "https://")):
+                                image_urls.append(url)
                         except Exception as e:
                             print(f"Error parsing image data: {str(e)}")
-                            continue
-                
-                # 确保只返回指定数量的URL
-                image_urls = image_urls[:self.max_images]
+
+                # Strategy 2: regex fallback for `"murl":"..."` (more robust to minor markup changes)
+                if not image_urls:
+                    for match in re.finditer(r'"murl"\s*:\s*"([^"]+)"', html):
+                        url = match.group(1)
+                        if isinstance(url, str) and url.startswith(("http://", "https://")):
+                            image_urls.append(url)
+
+                # Strategy 3: img tags with direct src/data-src (fallback)
+                if not image_urls:
+                    for img in soup.find_all("img"):
+                        for attr in ("data-src", "data-original", "src"):
+                            url = img.get(attr)
+                            if isinstance(url, str) and url.startswith(("http://", "https://")):
+                                image_urls.append(url)
+                                break
+
+                # Deduplicate while preserving order, then cap
+                deduped = []
+                seen = set()
+                for url in image_urls:
+                    if url not in seen:
+                        seen.add(url)
+                        deduped.append(url)
+                    if len(deduped) >= self.max_images:
+                        break
+                image_urls = deduped
                 
                 # 更新缓存
                 if image_urls:
@@ -155,6 +197,95 @@ class ImageSearchThread(QThread):
         except Exception as e:
             print(f"Error fetching image URLs: {str(e)}")
             return []
+
+    async def fetch_wikimedia_image_urls(self):
+        """Fetch image candidate URLs from Wikimedia/Wikipedia via MediaWiki APIs (stable JSON)."""
+        urls = []
+        urls.extend(await self._fetch_commons_file_urls(self.word, self.max_images * 4))
+        if len(urls) < self.max_images:
+            urls.extend(await self._fetch_wikipedia_pageimage_urls(self.word, "zh", self.max_images * 4))
+        if len(urls) < self.max_images:
+            urls.extend(await self._fetch_wikipedia_pageimage_urls(self.word, "en", self.max_images * 4))
+
+        deduped = []
+        seen = set()
+        for url in urls:
+            if url not in seen:
+                seen.add(url)
+                deduped.append(url)
+            if len(deduped) >= self.max_images:
+                break
+        return deduped
+
+    async def _fetch_json(self, url: str) -> dict:
+        try:
+            async with self._session.get(url, timeout=10) as response:
+                if response.status != 200:
+                    return {}
+                return await response.json(content_type=None)
+        except Exception as e:
+            print(f"Error fetching JSON: {str(e)}")
+            return {}
+
+    async def _fetch_commons_file_urls(self, query: str, limit: int) -> list[str]:
+        # Search file namespace (6) on Commons and return thumb URLs.
+        api = "https://commons.wikimedia.org/w/api.php"
+        params = {
+            "action": "query",
+            "format": "json",
+            "generator": "search",
+            "gsrsearch": query,
+            "gsrnamespace": "6",
+            "gsrlimit": str(max(1, min(limit, 50))),
+            "prop": "imageinfo",
+            "iiprop": "url",
+            "iiurlwidth": "600",
+            "origin": "*",
+        }
+        url = f"{api}?{urllib.parse.urlencode(params)}"
+        data = await self._fetch_json(url)
+        pages = (data.get("query") or {}).get("pages") or {}
+
+        urls = []
+        for page in pages.values():
+            infos = page.get("imageinfo") or []
+            if not infos:
+                continue
+            info = infos[0] or {}
+            candidate = info.get("thumburl") or info.get("url")
+            if isinstance(candidate, str) and candidate.startswith(("http://", "https://")):
+                urls.append(candidate)
+                if len(urls) >= limit:
+                    break
+        return urls
+
+    async def _fetch_wikipedia_pageimage_urls(self, query: str, lang: str, limit: int) -> list[str]:
+        # Search pages on Wikipedia and return page thumbnail URLs (pageimages).
+        api = f"https://{lang}.wikipedia.org/w/api.php"
+        params = {
+            "action": "query",
+            "format": "json",
+            "generator": "search",
+            "gsrsearch": query,
+            "gsrlimit": str(max(1, min(limit, 50))),
+            "prop": "pageimages",
+            "piprop": "thumbnail",
+            "pithumbsize": "600",
+            "origin": "*",
+        }
+        url = f"{api}?{urllib.parse.urlencode(params)}"
+        data = await self._fetch_json(url)
+        pages = (data.get("query") or {}).get("pages") or {}
+
+        urls = []
+        for page in pages.values():
+            thumb = page.get("thumbnail") or {}
+            candidate = thumb.get("source")
+            if isinstance(candidate, str) and candidate.startswith(("http://", "https://")):
+                urls.append(candidate)
+                if len(urls) >= limit:
+                    break
+        return urls
 
     def _get_cached_urls(self):
         """获取缓存的URL列表"""
@@ -238,6 +369,8 @@ class ImageHandler:
         :return: QPixmap对象
         """
         pixmap = QPixmap(image_path)
+        if pixmap.isNull():
+            return None
         if pixmap.width() > max_size or pixmap.height() > max_size:
             pixmap = pixmap.scaled(
                 max_size, 

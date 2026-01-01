@@ -3,6 +3,7 @@ from aqt import mw
 from anki.notes import Note
 import json
 import os
+import urllib.parse
 from PyQt6.QtCore import QTimer, Qt, QSettings
 from PyQt6.QtWidgets import QSplitter
 from ..utils.ai_factory import AIFactory
@@ -97,6 +98,8 @@ class ReaderWindow(QMainWindow):
 
         # 初始化词汇面板空状态
         self._set_word_panel_empty_state()
+        self.ui.imageLabel.setOpenExternalLinks(True)
+        self.ui.imageLabel.setTextFormat(Qt.TextFormat.RichText)
         
         # 设置窗口标题
         self.setWindowTitle("阅读器")
@@ -1123,6 +1126,7 @@ class ReaderWindow(QMainWindow):
         # 清除当前图片
         self.current_images = []
         self.current_image_index = 0
+        self.ui.imageLabel.setText("正在加载图片…")
         self.update_image_navigation()
         
         # 开始搜索图片
@@ -1135,20 +1139,31 @@ class ReaderWindow(QMainWindow):
     
     def on_images_found(self, image_paths):
         """当找到图片时的回调"""
-        self.current_images = image_paths
+        self.current_images = [p for p in (image_paths or []) if p and os.path.exists(p)]
         self.current_image_index = 0
-        self.show_current_image()
+        if not self.show_current_image():
+            self.on_image_error("图片无法解码或已失效")
+            return
         self.update_image_navigation()
     
     def show_current_image(self):
         """显示当前索引的图片"""
         if not self.current_images:
             self.ui.imageLabel.setText("暂无图片")
-            return
-            
-        current_path = self.current_images[self.current_image_index]
-        pixmap = ImageHandler.load_image(current_path)
-        self.ui.imageLabel.setPixmap(pixmap)
+            return False
+
+        while self.current_images and self.current_image_index < len(self.current_images):
+            current_path = self.current_images[self.current_image_index]
+            pixmap = ImageHandler.load_image(current_path)
+            if pixmap is not None:
+                self.ui.imageLabel.setPixmap(pixmap)
+                return True
+
+            # 当前图片无效则跳到下一张
+            self.current_image_index += 1
+
+        self.ui.imageLabel.setText("暂无可用图片")
+        return False
     
     def show_prev_image(self):
         """显示上一张图片"""
@@ -1180,7 +1195,16 @@ class ReaderWindow(QMainWindow):
     
     def on_image_error(self, error_message):
         """当图片搜索出错时的回调"""
-        self.ui.imageLabel.setText(f"图片加载失败：{error_message}")
+        message = (error_message or "").strip()
+        if message.lower() == "no images found":
+            message = "未找到图片（可能网络波动或关键词过于生僻）"
+
+        query = urllib.parse.quote(self.current_word or "")
+        search_url = f"https://www.bing.com/images/search?q={query}"
+        self.ui.imageLabel.setText(
+            f"<div style='font-size:16px; font-weight:600;'>图片加载失败：{message}</div>"
+            f"<div style='margin-top:10px;'><a href='{search_url}'>在浏览器中搜索图片</a></div>"
+        )
         self.current_images = []
         self.current_image_index = 0
         self.update_image_navigation()
