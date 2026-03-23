@@ -2,7 +2,7 @@ import json
 import os
 
 from PyQt6.QtCore import pyqtSignal, QTimer, Qt
-from PyQt6.QtWidgets import QTextEdit
+from PyQt6.QtWidgets import QApplication, QMenu, QTextEdit
 from PyQt6.QtGui import QTextCursor
 
 from .settings_dialog import CONFIG_PATH
@@ -16,6 +16,7 @@ class WordClickableTextEdit(QTextEdit):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self.setReadOnly(True)
         self.setMouseTracking(True)
         self.viewport().setCursor(Qt.CursorShape.IBeamCursor)
         self.context_extractor = TextContextExtractor()
@@ -34,6 +35,12 @@ class WordClickableTextEdit(QTextEdit):
             self.click_timer.start(200)  # 200ms延迟
             self.selecting_text = False
         super().mousePressEvent(event)
+
+    def mouseDoubleClickEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.click_timer.stop()
+            self.selecting_text = True
+        super().mouseDoubleClickEvent(event)
 
     def mouseReleaseEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -69,16 +76,39 @@ class WordClickableTextEdit(QTextEdit):
         self.selecting_text = False
 
     def show_context_menu(self, position):
-        menu = self.createStandardContextMenu()
+        menu = QMenu(self)
 
-        cursor = self.textCursor()
-        selected_text = cursor.selectedText().strip()
+        cursor = self.cursorForPosition(position)
+        cursor.select(QTextCursor.SelectionType.WordUnderCursor)
+        selected_text = self.textCursor().selectedText().strip()
+        selected_word = cursor.selectedText().strip()
 
         if selected_text:
             lookup_action = menu.addAction("查词")
-            menu.insertAction(menu.actions()[0], lookup_action)
-            menu.insertSeparator(menu.actions()[1])
-            lookup_action.triggered.connect(lambda: self.lookup_and_emit(selected_text, cursor.position()))
+            lookup_action.triggered.connect(
+                lambda: self.lookup_and_emit(selected_text, self.textCursor().position())
+            )
+            menu.addSeparator()
+
+            copy_action = menu.addAction("复制")
+            copy_action.triggered.connect(self.copy)
+        elif selected_word:
+            lookup_action = menu.addAction(f"查词：{selected_word}")
+            lookup_action.triggered.connect(
+                lambda: self.lookup_and_emit(selected_word, cursor.position())
+            )
+            menu.addSeparator()
+
+            copy_word_action = menu.addAction("复制单词")
+            copy_word_action.triggered.connect(
+                lambda: QApplication.clipboard().setText(selected_word)
+            )
+        else:
+            copy_action = menu.addAction("复制")
+            copy_action.setEnabled(False)
+
+        select_all_action = menu.addAction("全选")
+        select_all_action.triggered.connect(self.selectAll)
 
         menu.exec(self.viewport().mapToGlobal(position))
 
@@ -110,4 +140,3 @@ class WordClickableTextEdit(QTextEdit):
 
         text = self.toPlainText()
         return self.context_extractor.get_context(text, cursor_pos, include_adjacent)
-

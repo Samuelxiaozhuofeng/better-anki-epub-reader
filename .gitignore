@@ -36,3 +36,4 @@ vendor/
 
 # Runtime-generated addon config (user-specific)
 config.json
+.ace-tool/

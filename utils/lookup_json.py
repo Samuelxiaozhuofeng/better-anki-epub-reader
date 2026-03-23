@@ -178,8 +178,16 @@ def escape_html(text: str) -> str:
     )
 
 
-def lookup_template_for_preferences(*, style: str, language: str) -> str:
-    style = (style or "friendly").strip().lower()
+def lookup_template_for_preferences(
+    *,
+    style_mode: str,
+    preset_style: str,
+    language: str,
+    custom_style_instruction: str = "",
+    custom_style_name: str = "",
+) -> str:
+    style_mode = (style_mode or "preset").strip().lower()
+    preset_style = (preset_style or "friendly").strip().lower()
     language = (language or "zh").strip().lower()
 
     if language == "en":
@@ -189,12 +197,21 @@ def lookup_template_for_preferences(*, style: str, language: str) -> str:
     else:
         lang_line = "释义内容请使用中文（JSON 键保持为系统指定）。"
 
-    if style == "formal":
+    if style_mode == "custom" and custom_style_instruction.strip():
+        custom_name = custom_style_name.strip()
+        style_lines = [
+            "请严格遵循下面的解释风格要求，但不要改变系统规定的 JSON 输出格式。",
+        ]
+        if custom_name:
+            style_lines.append(f"当前自定义风格名称：{custom_name}")
+        style_lines.append("自定义风格要求：")
+        style_lines.append(custom_style_instruction.strip())
+    elif preset_style == "formal":
         style_lines = (
             "Style: formal, academic, precise; avoid jokes and avoid fluff.",
             "Prefer clear definitions over paraphrase.",
         )
-    elif style == "humorous":
+    elif preset_style == "humorous":
         style_lines = (
             "Style: light and humorous but still accurate; keep it tasteful and brief.",
             "No emojis unless absolutely necessary.",

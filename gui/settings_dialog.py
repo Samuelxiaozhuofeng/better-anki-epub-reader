@@ -3,7 +3,6 @@ from typing import Dict, Any, Optional
 import json
 from ..utils.ai_factory import AIFactory
 from ..utils.ai_client import AIClient
-from ..utils.template_manager import TemplateManager
 from ..utils.async_utils import run_async
 from ..utils.paths import config_json_path
 from .dialog_styles import COMMON_DIALOG_QSS

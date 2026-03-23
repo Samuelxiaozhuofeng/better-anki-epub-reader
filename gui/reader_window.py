@@ -10,9 +10,9 @@ from ..utils.ai_factory import AIFactory
 from ..utils.ai_client import AIClient, AIResponse
 from ..utils.epub_handler import EPUBHandler
 from ..utils.db_handler import DBHandler
-from ..utils.template_manager import TemplateManager
 from ..utils.anki_handler import AnkiHandler
 from ..utils.image_handler import ImageHandler
+from ..utils.lookup_preferences import find_active_custom_style, load_lookup_preferences
 from .note_settings_dialog import NoteSettingsDialog
 from .template_dialog import TemplateDialog
 from .settings_dialog import AIServiceSettingsDialog, ContextSettingsDialog
@@ -37,10 +37,6 @@ class ReaderWindow(QMainWindow):
         # 设置UI
         self.ui = Ui_ReaderWindow()
         self.ui.setupUi(self)
-        
-        # 初始化模板管理器和加载上次使用的模板ID
-        self.template_manager = TemplateManager()
-        self.current_template_id = self.template_manager.current_template_id
         
         # 替换普通QTextEdit为WordClickableTextEdit
         self.reader_container = self.ui.reader_container
@@ -134,7 +130,19 @@ class ReaderWindow(QMainWindow):
         self.font_size_spin.setValue(18)
         self.font_size_spin.valueChanged.connect(self.update_text_style)
         self.ui.toolbar.addWidget(self.font_size_spin)
-        
+
+        self.ui.toolbar.addSeparator()
+
+        # 释义面板字体大小调节
+        lookup_font_size_label = QLabel("解释字号：")
+        self.ui.toolbar.addWidget(lookup_font_size_label)
+
+        self.lookup_font_size_spin = QSpinBox()
+        self.lookup_font_size_spin.setRange(12, 32)
+        self.lookup_font_size_spin.setValue(self._default_lookup_font_size())
+        self.lookup_font_size_spin.valueChanged.connect(self.update_text_style)
+        self.ui.toolbar.addWidget(self.lookup_font_size_spin)
+
         self.ui.toolbar.addSeparator()
         
         # 行间距调节
@@ -341,24 +349,23 @@ class ReaderWindow(QMainWindow):
                 pass
         return {"pos": False, "ipa": False, "examples": False}
 
-    def _load_lookup_style_and_language(self) -> tuple[str, str]:
-        path = config_json_path()
-        if os.path.exists(path):
-            try:
-                with open(path, "r", encoding="utf-8") as f:
-                    config = json.load(f)
-                style = str(config.get("lookup_style", "friendly"))
-                language = str(config.get("lookup_language", "zh"))
-                return style, language
-            except Exception:
-                pass
-        return "friendly", "zh"
+    def _load_lookup_preferences(self) -> dict:
+        return load_lookup_preferences()
 
     def start_lookup(self, request_id: int, word: str, context: str) -> None:
-        style, language = self._load_lookup_style_and_language()
-        template_text = lookup_template_for_preferences(style=style, language=language)
+        lookup_preferences = self._load_lookup_preferences()
+        active_custom_style = find_active_custom_style(lookup_preferences)
+        template_text = lookup_template_for_preferences(
+            style_mode=str(lookup_preferences.get("lookup_style_mode", "preset")),
+            preset_style=str(lookup_preferences.get("lookup_style_preset", "friendly")),
+            language=str(lookup_preferences.get("lookup_language", "zh")),
+            custom_style_instruction=(
+                str(active_custom_style.get("instruction", "")) if active_custom_style else ""
+            ),
+            custom_style_name=str(active_custom_style.get("name", "")) if active_custom_style else "",
+        )
 
-        enabled_optional_fields = self._load_lookup_optional_fields()
+        enabled_optional_fields = lookup_preferences.get("lookup_optional_fields", {})
         prompt = build_lookup_prompt(
             template_text=template_text,
             word=word,
@@ -503,7 +510,7 @@ class ReaderWindow(QMainWindow):
                 border-radius: 10px;
                 border: 1px solid {border_color};
                 padding: 16px;
-                font-size: 14px;
+                font-size: {self.lookup_font_size_spin.value()}px;
                 line-height: 1.5;
                 font-family: "SF Pro Text", "-apple-system", "PingFang SC", "Microsoft YaHei";
             }}
@@ -571,6 +578,14 @@ class ReaderWindow(QMainWindow):
                 border-radius: 6px;
                 padding: 6px 12px;
                 min-width: 120px;
+            }}
+            QToolBar QSpinBox, QToolBar QDoubleSpinBox {{
+                background-color: {control_bg};
+                color: {text_color};
+                border: 1px solid {border_color};
+                border-radius: 6px;
+                padding: 4px 8px;
+                min-width: 72px;
             }}
         """
         self.ui.toolbar.setStyleSheet(toolbar_style)
@@ -731,10 +746,7 @@ class ReaderWindow(QMainWindow):
     def show_template_settings(self):
         """显示模板设置对话框"""
         dialog = TemplateDialog(self)
-        if dialog.exec():
-            # 重新加载模板管理器
-            self.template_manager = TemplateManager()
-            self.current_template_id = self.template_manager._load_current_template_id()
+        dialog.exec()
     
     def mark_current_position(self):
         """标记当前阅读位置（带提示）"""
@@ -775,6 +787,7 @@ class ReaderWindow(QMainWindow):
         try:
             config = {
                 "font_size": self.font_size_spin.value(),
+                "lookup_font_size": self.lookup_font_size_spin.value(),
                 "line_spacing": self.line_spacing_spin.value(),
                 "paragraph_spacing": self.paragraph_spacing_spin.value(),
                 "text_align": self.align_combo.currentData() or "left",
@@ -800,6 +813,13 @@ class ReaderWindow(QMainWindow):
                     
                     # 设置字体大小
                     self.font_size_spin.setValue(config.get("font_size", 18))
+
+                    # 设置释义面板字体大小
+                    lookup_font_size = config.get(
+                        "lookup_font_size",
+                        self._default_lookup_font_size(),
+                    )
+                    self.lookup_font_size_spin.setValue(lookup_font_size)
                     
                     # 设置行间距
                     self.line_spacing_spin.setValue(config.get("line_spacing", 1.8))
@@ -813,11 +833,16 @@ class ReaderWindow(QMainWindow):
                     # 设置主题
                     self._set_theme_from_config(config.get("theme", "Default"))
                     
-                    # 立即应用样式
-                    self.update_text_style()
+            # 立即应用样式
+            self.update_text_style()
                     
         except Exception as e:
             print(f"加载样式设置失败: {str(e)}")
+
+    def _default_lookup_font_size(self) -> int:
+        """根据阅读字号给出更易读的释义面板默认字号"""
+        reader_font_size = self.font_size_spin.value() if hasattr(self, "font_size_spin") else 18
+        return max(14, min(32, reader_font_size - 2))
 
     def _set_align_from_config(self, value: str) -> None:
         value = (value or "").strip()
