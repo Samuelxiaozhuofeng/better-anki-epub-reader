@@ -1,6 +1,8 @@
-from aqt.qt import *
-from typing import Dict, Any, Optional
 import json
+import os
+from typing import Dict, Any, Optional
+
+from aqt.qt import *
 from ..utils.ai_factory import AIFactory
 from ..utils.ai_client import AIClient
 from ..utils.async_utils import run_async
@@ -10,6 +12,9 @@ from .dialog_styles import COMMON_DIALOG_QSS
 CONFIG_PATH = config_json_path()
 
 DIALOG_QSS = COMMON_DIALOG_QSS
+AI_CONTEXT_CURRENT_ONLY = "Current Sentence Only"
+AI_CONTEXT_CUSTOM_ADJACENT = "Current Sentence with Adjacent (Custom)"
+AI_CONTEXT_LEGACY_ADJACENT = "Current Sentence with Adjacent (1 Sentence)"
 
 class ContextSettingsDialog(QDialog):
     def __init__(self, parent=None):
@@ -24,15 +29,23 @@ class ContextSettingsDialog(QDialog):
         
         # AI上下文设置组
         self.ai_context_group = QGroupBox("AI 上下文范围")
-        ai_context_layout = QVBoxLayout()
+        ai_context_layout = QFormLayout()
         
         self.ai_context_type_label = QLabel("AI 上下文：")
         self.ai_context_type_combo = QComboBox()
-        self.ai_context_type_combo.addItem("仅当前句子", "Current Sentence Only")
-        self.ai_context_type_combo.addItem("当前句子 + 前后各 1 句", "Current Sentence with Adjacent (1 Sentence)")
+        self.ai_context_type_combo.addItem("仅当前句子", AI_CONTEXT_CURRENT_ONLY)
+        self.ai_context_type_combo.addItem("当前句子 + 前后各 N 句", AI_CONTEXT_CUSTOM_ADJACENT)
+        self.ai_context_type_combo.currentIndexChanged.connect(self.on_ai_context_type_changed)
+
+        self.ai_context_count_label = QLabel("前后句子数：")
+        self.ai_context_count_spinbox = QSpinBox()
+        self.ai_context_count_spinbox.setRange(1, 99)
+        self.ai_context_count_spinbox.setValue(1)
+        self.ai_context_count_spinbox.setSuffix(" 句")
+        self.ai_context_count_spinbox.setToolTip("输入 N 后，将包含当前句子以及前后各 N 句")
         
-        ai_context_layout.addWidget(self.ai_context_type_label)
-        ai_context_layout.addWidget(self.ai_context_type_combo)
+        ai_context_layout.addRow(self.ai_context_type_label, self.ai_context_type_combo)
+        ai_context_layout.addRow(self.ai_context_count_label, self.ai_context_count_spinbox)
         self.ai_context_group.setLayout(ai_context_layout)
         
         # Anki上下文设置组
@@ -76,6 +89,7 @@ class ContextSettingsDialog(QDialog):
         
         # 加载配置
         self.load_config()
+        self.on_ai_context_type_changed(self.ai_context_type_combo.currentIndex())
         
     def load_config(self):
         """加载配置"""
@@ -85,14 +99,23 @@ class ContextSettingsDialog(QDialog):
                     config = json.load(f)
                     
                     # 设置AI上下文类型
-                    ai_context_type = config.get("ai_context_type", "Current Sentence Only")
+                    ai_context_type = config.get("ai_context_type", AI_CONTEXT_CURRENT_ONLY)
+                    if ai_context_type == AI_CONTEXT_LEGACY_ADJACENT:
+                        ai_context_type = AI_CONTEXT_CUSTOM_ADJACENT
+                        ai_context_count = 1
+                    else:
+                        ai_context_count = int(config.get("ai_context_adjacent_count", 1) or 1)
+
+                    ai_context_count = max(1, ai_context_count)
+                    self.ai_context_count_spinbox.setValue(ai_context_count)
+
                     for i in range(self.ai_context_type_combo.count()):
                         if self.ai_context_type_combo.itemData(i) == ai_context_type:
                             self.ai_context_type_combo.setCurrentIndex(i)
                             break
                         
                     # 设置Anki上下文类型
-                    anki_context_type = config.get("anki_context_type", "Current Sentence Only")
+                    anki_context_type = config.get("anki_context_type", AI_CONTEXT_CURRENT_ONLY)
                     for i in range(self.anki_context_type_combo.count()):
                         if self.anki_context_type_combo.itemData(i) == anki_context_type:
                             self.anki_context_type_combo.setCurrentIndex(i)
@@ -105,6 +128,12 @@ class ContextSettingsDialog(QDialog):
                         self.lookup_examples_checkbox.setChecked(bool(lookup_optional.get("examples", False)))
         except Exception as e:
             QMessageBox.warning(self, "错误", f"加载配置失败：{str(e)}")
+
+    def on_ai_context_type_changed(self, index):
+        """根据 AI 上下文模式切换数量输入框状态"""
+        use_adjacent = self.ai_context_type_combo.itemData(index) == AI_CONTEXT_CUSTOM_ADJACENT
+        self.ai_context_count_label.setEnabled(use_adjacent)
+        self.ai_context_count_spinbox.setEnabled(use_adjacent)
     
     def accept(self):
         """保存设置"""
@@ -117,6 +146,7 @@ class ContextSettingsDialog(QDialog):
             
             # 更新上下文设置
             config["ai_context_type"] = self.ai_context_type_combo.currentData()
+            config["ai_context_adjacent_count"] = self.ai_context_count_spinbox.value()
             config["anki_context_type"] = self.anki_context_type_combo.currentData()
             config["lookup_optional_fields"] = {
                 "pos": self.lookup_pos_checkbox.isChecked(),

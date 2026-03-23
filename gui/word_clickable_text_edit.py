@@ -5,7 +5,12 @@ from PyQt6.QtCore import pyqtSignal, QTimer, Qt
 from PyQt6.QtWidgets import QApplication, QMenu, QTextEdit
 from PyQt6.QtGui import QTextCursor
 
-from .settings_dialog import CONFIG_PATH
+from .settings_dialog import (
+    AI_CONTEXT_CURRENT_ONLY,
+    AI_CONTEXT_CUSTOM_ADJACENT,
+    AI_CONTEXT_LEGACY_ADJACENT,
+    CONFIG_PATH,
+)
 from ..utils.text_utils import TextContextExtractor
 
 
@@ -128,15 +133,27 @@ class WordClickableTextEdit(QTextEdit):
         Returns:
             str: 上下文文本
         """
-        include_adjacent = True
+        include_adjacent = False
+        adjacent_count = 1
         if os.path.exists(CONFIG_PATH):
             with open(CONFIG_PATH, "r", encoding="utf-8") as file:
                 config = json.load(file)
-                context_type = config.get(
-                    "ai_context_type" if for_ai else "anki_context_type",
-                    "Current Sentence Only",
-                )
-                include_adjacent = context_type == "Current Sentence with Adjacent (1 Sentence)"
+                if for_ai:
+                    context_type = config.get("ai_context_type", AI_CONTEXT_CURRENT_ONLY)
+                    if context_type == AI_CONTEXT_LEGACY_ADJACENT:
+                        include_adjacent = True
+                        adjacent_count = 1
+                    elif context_type == AI_CONTEXT_CUSTOM_ADJACENT:
+                        include_adjacent = True
+                        adjacent_count = max(1, int(config.get("ai_context_adjacent_count", 1) or 1))
+                else:
+                    context_type = config.get("anki_context_type", AI_CONTEXT_CURRENT_ONLY)
+                    include_adjacent = context_type == AI_CONTEXT_LEGACY_ADJACENT
 
         text = self.toPlainText()
-        return self.context_extractor.get_context(text, cursor_pos, include_adjacent)
+        return self.context_extractor.get_context(
+            text,
+            cursor_pos,
+            include_adjacent=include_adjacent,
+            adjacent_count=adjacent_count,
+        )
