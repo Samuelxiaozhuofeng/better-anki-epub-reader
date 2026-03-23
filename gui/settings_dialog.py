@@ -4,7 +4,7 @@ from typing import Dict, Any, Optional
 
 from aqt.qt import *
 from ..utils.ai_factory import AIFactory
-from ..utils.ai_client import AIClient
+from ..utils.ai_client import AIClient, fetch_available_models
 from ..utils.async_utils import run_async
 from ..utils.paths import config_json_path
 from .dialog_styles import COMMON_DIALOG_QSS
@@ -195,11 +195,15 @@ class AIServiceSettingsDialog(QDialog):
         self.api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
         self.api_base_edit = QLineEdit()
         self.model_combo = QComboBox()
-        self.model_combo.addItems(["gpt-3.5-turbo", "gpt-4"])
+        self.fetch_openai_models_button = QPushButton("获取模型")
+
+        openai_model_layout = QHBoxLayout()
+        openai_model_layout.addWidget(self.model_combo)
+        openai_model_layout.addWidget(self.fetch_openai_models_button)
         
         openai_layout.addRow("API Key：", self.api_key_edit)
         openai_layout.addRow("API Base：", self.api_base_edit)
-        openai_layout.addRow("模型：", self.model_combo)
+        openai_layout.addRow("模型：", openai_model_layout)
         self.openai_group.setLayout(openai_layout)
         
         # 自定义服务设置
@@ -210,11 +214,15 @@ class AIServiceSettingsDialog(QDialog):
         self.custom_api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
         self.custom_base_edit = QLineEdit()
         self.custom_model_combo = QComboBox()
-        self.custom_model_combo.setEditable(True)
+        self.fetch_custom_models_button = QPushButton("获取模型")
+
+        custom_model_layout = QHBoxLayout()
+        custom_model_layout.addWidget(self.custom_model_combo)
+        custom_model_layout.addWidget(self.fetch_custom_models_button)
         
         custom_layout.addRow("API Key：", self.custom_api_key_edit)
         custom_layout.addRow("API Base：", self.custom_base_edit)
-        custom_layout.addRow("模型：", self.custom_model_combo)
+        custom_layout.addRow("模型：", custom_model_layout)
         
         # 测试连接按钮
         self.test_button = QPushButton("测试连接")
@@ -242,6 +250,12 @@ class AIServiceSettingsDialog(QDialog):
         
         # 连接信号
         self.test_button.clicked.connect(self.test_connection)
+        self.fetch_openai_models_button.clicked.connect(
+            lambda: self.fetch_models_for_service("openai")
+        )
+        self.fetch_custom_models_button.clicked.connect(
+            lambda: self.fetch_models_for_service("custom")
+        )
         
         # 加载配置
         self.load_config()
@@ -282,18 +296,38 @@ class AIServiceSettingsDialog(QDialog):
                     self.api_key_edit.setText(openai_config.get("api_key", ""))
                     self.api_base_edit.setText(openai_config.get("api_base", ""))
                     model = openai_config.get("model", "gpt-3.5-turbo")
-                    index = self.model_combo.findText(model)
-                    if index >= 0:
-                        self.model_combo.setCurrentIndex(index)
+                    self.set_combo_items(self.model_combo, [model], selected=model)
                     
                     # 自定义API设置
                     custom_config = config.get("custom", {})
                     self.custom_api_key_edit.setText(custom_config.get("api_key", ""))
                     self.custom_base_edit.setText(custom_config.get("api_base", ""))
                     model = custom_config.get("model", "gpt-3.5-turbo")
-                    self.custom_model_combo.setCurrentText(model)
+                    self.set_combo_items(self.custom_model_combo, [model], selected=model)
         except Exception as e:
             QMessageBox.warning(self, "错误", f"加载配置失败：{str(e)}")
+
+    def set_combo_items(self, combo: QComboBox, items, selected: str = ""):
+        """更新模型下拉框，并尽量保留当前选择"""
+        normalized_items = []
+        for item in items:
+            item_text = str(item).strip()
+            if item_text and item_text not in normalized_items:
+                normalized_items.append(item_text)
+
+        combo.blockSignals(True)
+        combo.clear()
+        combo.addItems(normalized_items)
+
+        target = (selected or combo.currentText()).strip()
+        if target:
+            index = combo.findText(target)
+            if index < 0:
+                combo.addItem(target)
+                index = combo.findText(target)
+            if index >= 0:
+                combo.setCurrentIndex(index)
+        combo.blockSignals(False)
     
     def get_current_config(self) -> Dict:
         """获取当前配置"""
@@ -320,6 +354,9 @@ class AIServiceSettingsDialog(QDialog):
             if not self.api_key_edit.text().strip():
                 QMessageBox.warning(self, "错误", "请输入 OpenAI API Key。")
                 return False
+            if not self.model_combo.currentText().strip():
+                QMessageBox.warning(self, "错误", "请先获取并选择模型。")
+                return False
         else:
             if not self.custom_api_key_edit.text().strip():
                 QMessageBox.warning(self, "错误", "请输入 API Key。")
@@ -327,8 +364,64 @@ class AIServiceSettingsDialog(QDialog):
             if not self.custom_base_edit.text().strip():
                 QMessageBox.warning(self, "错误", "请输入 API Base。")
                 return False
+            if not self.custom_model_combo.currentText().strip():
+                QMessageBox.warning(self, "错误", "请先获取并选择模型。")
+                return False
         
         return True
+
+    def get_service_credentials(self, service_type: str) -> Dict[str, str]:
+        """读取指定服务当前输入的鉴权信息"""
+        if service_type == "openai":
+            return {
+                "api_key": self.api_key_edit.text().strip(),
+                "api_base": self.api_base_edit.text().strip(),
+            }
+        return {
+            "api_key": self.custom_api_key_edit.text().strip(),
+            "api_base": self.custom_base_edit.text().strip(),
+        }
+
+    def set_fetch_button_state(self, service_type: str, loading: bool):
+        """更新获取模型按钮状态"""
+        button = (
+            self.fetch_openai_models_button
+            if service_type == "openai"
+            else self.fetch_custom_models_button
+        )
+        button.setEnabled(not loading)
+        button.setText("获取中..." if loading else "获取模型")
+
+    def fetch_models_for_service(self, service_type: str):
+        """根据 API Base 拉取可用模型"""
+        credentials = self.get_service_credentials(service_type)
+        api_key = credentials["api_key"]
+        api_base = credentials["api_base"]
+
+        if service_type == "openai" and not api_key:
+            QMessageBox.warning(self, "错误", "请先输入 OpenAI API Key。")
+            return
+        if service_type == "custom":
+            if not api_key:
+                QMessageBox.warning(self, "错误", "请先输入 API Key。")
+                return
+            if not api_base:
+                QMessageBox.warning(self, "错误", "请先输入 API Base。")
+                return
+
+        combo = self.model_combo if service_type == "openai" else self.custom_model_combo
+        current_model = combo.currentText().strip()
+
+        self.set_fetch_button_state(service_type, True)
+        try:
+            models = run_async(fetch_available_models(api_base=api_base, api_key=api_key))
+            selected_model = current_model if current_model in models else (models[0] if models else "")
+            self.set_combo_items(combo, models, selected=selected_model)
+            QMessageBox.information(self, "成功", f"已获取 {len(models)} 个模型。")
+        except Exception as e:
+            QMessageBox.warning(self, "错误", f"获取模型失败：{str(e)}")
+        finally:
+            self.set_fetch_button_state(service_type, False)
     
     def accept(self):
         """保存设置"""

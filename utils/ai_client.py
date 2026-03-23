@@ -53,6 +53,55 @@ def _chat_completions_url(api_base: str) -> str:
     return f"{base}/chat/completions"
 
 
+def _models_url(api_base: str) -> str:
+    base = (api_base or "").strip().rstrip("/")
+    if not base:
+        base = "https://api.openai.com/v1"
+    if base.endswith("/chat/completions"):
+        base = base[: -len("/chat/completions")]
+    if base.endswith("/models"):
+        return base
+    return f"{base}/models"
+
+
+async def fetch_available_models(api_base: str, api_key: str = "") -> list[str]:
+    """获取当前 API Base 可用的模型列表"""
+    headers = {"Content-Type": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    timeout = aiohttp.ClientTimeout(total=30, connect=10)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with session.get(_models_url(api_base), headers=headers) as response:
+            if response.status != 200:
+                raise Exception(f"获取模型失败: {await response.text()}")
+
+            result = await response.json()
+
+    raw_models = result.get("data", []) if isinstance(result, dict) else result
+    if not isinstance(raw_models, list):
+        raise Exception("模型列表格式错误")
+
+    models: list[str] = []
+    for item in raw_models:
+        if isinstance(item, dict):
+            model_id = item.get("id") or item.get("name")
+        elif isinstance(item, str):
+            model_id = item
+        else:
+            model_id = None
+
+        if model_id:
+            model_text = str(model_id).strip()
+            if model_text and model_text not in models:
+                models.append(model_text)
+
+    if not models:
+        raise Exception("未获取到任何模型")
+
+    return models
+
+
 async def _sse_stream_chat_completions(
     *,
     session: aiohttp.ClientSession,
